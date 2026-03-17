@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 from pinocut.config import RENDER_PRESETS, ColorGradeStyle, RenderPreset
-from pinocut.effects import LowerThirdStyle, make_color_grade_filter, render_lower_third
+from pinocut.effects import LowerThirdStyle, ken_burns_frame, make_color_grade_filter, render_lower_third, write_cube_lut
 from pinocut.integrations.e2b_sandbox import SandboxConfig, SandboxExecutor
 from pinocut.stages.base import BaseStage
 from pinocut.state import PinoCutState, TransitionType
@@ -54,20 +54,12 @@ class RenderStage(BaseStage):
     # ══════════════════════════════════════════
 
     def _render_moviepy(self, state: PinoCutState) -> PinoCutState:
-        from moviepy.editor import (
-            AudioFileClip,
-            CompositeAudioClip,
-            CompositeVideoClip,
-            TextClip,
-            VideoFileClip,
-            concatenate_videoclips,
-        )
-
         clips_data = state.get("clips", [])
         edit_decisions = state.get("edit_decisions", [])
         title_overlays = state.get("title_overlays", [])
         audio_mix = state.get("audio_mix")
         color_grade = state.get("color_grade", ColorGradeStyle.NONE)
+        ken_burns_clips = set(state.get("ken_burns_clips", []))
         config = state["project_config"]
         errors: list[StageError] = list(state.get("errors", []))
 
@@ -76,6 +68,15 @@ class RenderStage(BaseStage):
             state["errors"] = errors
             state["output_path"] = None
             return state
+
+        from moviepy.editor import (
+            AudioFileClip,
+            CompositeAudioClip,
+            CompositeVideoClip,
+            TextClip,
+            VideoFileClip,
+            concatenate_videoclips,
+        )
 
         video_clips = []
         titles_by_path = {t.clip_path: t for t in title_overlays}
@@ -90,6 +91,14 @@ class RenderStage(BaseStage):
                 grade_fn = make_color_grade_filter(color_grade)
                 if grade_fn:
                     vclip = vclip.fl_image(grade_fn)
+
+                # ── Ken Burns ──
+                if str(clip_seg.path) in ken_burns_clips:
+                    _dur = vclip.duration
+                    vclip = vclip.fl(
+                        lambda gf, t, dur=_dur: ken_burns_frame(gf(t), t, dur),
+                        apply_to="video",
+                    )
 
                 # ── Animated Lower Third ──
                 title = titles_by_path.get(str(clip_seg.path))
@@ -168,6 +177,7 @@ class RenderStage(BaseStage):
         clips_data = state.get("clips", [])
         edit_decisions = state.get("edit_decisions", [])
         audio_mix = state.get("audio_mix")
+        color_grade = state.get("color_grade", ColorGradeStyle.NONE)
         config = state["project_config"]
         errors: list[StageError] = list(state.get("errors", []))
 
@@ -184,12 +194,21 @@ class RenderStage(BaseStage):
         with tempfile.TemporaryDirectory(prefix="pinocut_ffmpeg_") as tmpdir:
             tmp = Path(tmpdir)
 
+            # ── LUT cube for color grading via lut3d filter ──
+            lut_path: str | None = None
+            if color_grade != ColorGradeStyle.NONE:
+                lut_file = tmp / "grade.cube"
+                if write_cube_lut(color_grade, lut_file):
+                    lut_path = str(lut_file.resolve())
+
             # ── Step 1: normalize clips to common format ──
             normalized: list[Path] = []
             for i, clip in enumerate(clips_data):
                 norm_path = tmp / f"norm_{i:04d}.mp4"
-                args = [
-                    "-i", str(clip.path),
+                args = ["-i", str(clip.path)]
+                if lut_path:
+                    args += ["-vf", f"lut3d={lut_path}"]
+                args += [
                     "-c:v", preset.codec,
                     "-preset", "ultrafast",  # fast for intermediates
                     "-crf", str(preset.crf + 5),  # lower quality for intermediates

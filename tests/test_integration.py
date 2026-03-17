@@ -7,11 +7,15 @@ from pathlib import Path
 
 import pytest
 
+from pinocut.agent import PinoCutAgent, route_after_analyze, route_after_ingest
+from pinocut.config import ColorGradeStyle, ProjectConfig
 from pinocut.integrations.e2b_sandbox import SandboxConfig, SandboxExecutor, SecurityError
 from pinocut.integrations.moltis_bridge import Channel, ChannelClosed, Memory, MoltisBridge, TaskScheduler
 from pinocut.integrations.romeo_phd import MetricsCollector, PipelineMetrics
 from pinocut.integrations.romeo_vision import MockVisionProvider, RomeoVisionClient
 from pinocut.integrations.swarm_registry import AgentCard, SwarmRegistry
+from pinocut.state import ClipSegment, PinoCutState
+from pinocut.utils.errors import ErrorSeverity, StageError
 
 
 # ── Swarm Registry ──
@@ -203,3 +207,77 @@ class TestMetrics:
         data = json.loads(path.read_text())
         assert len(data) == 1
         assert data[0]["run_id"] == "run1"
+
+
+# ── PinoCutAgent end-to-end ──
+
+class TestPinoCutAgentE2E:
+    def _base_config(self, folder: Path, **kwargs) -> ProjectConfig:
+        return ProjectConfig(
+            input_folder=folder,
+            metrics_enabled=False,
+            parallel=False,
+            **kwargs,
+        )
+
+    def test_aborts_on_missing_input_folder(self, tmp_path):
+        agent = PinoCutAgent()
+        result = agent.run(self._base_config(tmp_path / "nonexistent"))
+        assert result["output_path"] is None
+        assert any(e.severity == ErrorSeverity.FATAL for e in result["errors"])
+
+    def test_aborts_on_empty_input_folder(self, tmp_path):
+        folder = tmp_path / "empty"
+        folder.mkdir()
+        agent = PinoCutAgent()
+        result = agent.run(self._base_config(folder))
+        assert result["output_path"] is None
+        assert any(e.severity == ErrorSeverity.FATAL for e in result["errors"])
+
+    def test_metrics_report_available_after_run(self, tmp_path):
+        folder = tmp_path / "footage"
+        folder.mkdir()
+        agent = PinoCutAgent()
+        agent.run(self._base_config(folder))
+        report = agent.metrics_report()
+        assert isinstance(report, str)
+
+    def test_route_after_ingest_with_clips(self):
+        clip = ClipSegment(path=Path("a.mp4"), duration=5.0, has_audio=False,
+                           resolution=(1920, 1080), fps=30.0)
+        state: PinoCutState = {"clips": [clip], "errors": []}
+        assert route_after_ingest(state) == "analyze"
+
+    def test_route_after_ingest_with_fatal(self):
+        state: PinoCutState = {
+            "clips": [],
+            "errors": [StageError(stage="ingest", message="x", severity=ErrorSeverity.FATAL)],
+        }
+        assert route_after_ingest(state) == "abort"
+
+    def test_route_after_ingest_empty_clips(self):
+        state: PinoCutState = {"clips": [], "errors": []}
+        assert route_after_ingest(state) == "abort"
+
+    def test_route_after_analyze_single_clip_skips_transitions(self):
+        clip = ClipSegment(path=Path("a.mp4"), duration=5.0, has_audio=False,
+                           resolution=(1920, 1080), fps=30.0)
+        state: PinoCutState = {"clips": [clip], "errors": []}
+        assert route_after_analyze(state) == "titles"
+
+    def test_route_after_analyze_multiple_clips_goes_to_transitions(self):
+        clips = [
+            ClipSegment(path=Path(f"{i}.mp4"), duration=5.0, has_audio=False,
+                        resolution=(1920, 1080), fps=30.0)
+            for i in range(2)
+        ]
+        state: PinoCutState = {"clips": clips, "errors": []}
+        assert route_after_analyze(state) == "transitions"
+
+    def test_route_after_analyze_fatal_aborts(self):
+        state: PinoCutState = {
+            "clips": [],
+            "errors": [StageError(stage="analyze", message="x", severity=ErrorSeverity.FATAL)],
+        }
+        assert route_after_analyze(state) == "abort"
+

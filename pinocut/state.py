@@ -131,6 +131,7 @@ class PinoCutState(TypedDict, total=False):
     romeo_data: dict[str, RomeoVisionData]
     edit_decisions: list[EditDecision]
     title_overlays: list[TitleOverlay]
+    ken_burns_clips: list[str]
     color_grade: ColorGradeStyle
     audio_mix: AudioMixConfig
     output_path: str | None

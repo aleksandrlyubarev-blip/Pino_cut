@@ -47,9 +47,16 @@ class TitleStage(BaseStage):
 
         color_grade = self._pick_color_grade(romeo_data, config)
 
-        self.log.info(f"Generated {len(overlays)} title overlays, grade={color_grade.value}")
+        # Ken Burns: apply to clips with no detected speech (static / ambient shots)
+        ken_burns_clips = [str(clip.path) for clip in clips if not clip.speech_segments]
+
+        self.log.info(
+            f"Generated {len(overlays)} title overlays, grade={color_grade.value}, "
+            f"ken_burns={len(ken_burns_clips)} clips"
+        )
         state["title_overlays"] = overlays
         state["color_grade"] = color_grade
+        state["ken_burns_clips"] = ken_burns_clips
         return state
 
     def _generate_title(self, clip, romeo, index: int) -> str:

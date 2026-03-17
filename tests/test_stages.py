@@ -18,9 +18,12 @@ from pinocut.effects import (
     ken_burns_frame,
     make_color_grade_filter,
     render_lower_third,
+    write_cube_lut,
 )
+from pinocut.stages.analyze import AnalyzeStage
 from pinocut.stages.audio_mix import AudioMixStage
 from pinocut.stages.ingest import IngestStage
+from pinocut.stages.render import RenderStage
 from pinocut.stages.titles import TitleStage
 from pinocut.stages.transitions import TransitionStage
 from pinocut.state import (
@@ -220,6 +223,179 @@ class TestAnimatedPosition:
     def test_slide_up_end(self):
         _, y = animated_position(0.5, 0.5, TitleAnimation.SLIDE_UP, 100, 400, 480, 640)
         assert y == 400  # at target
+
+
+# ── AnalyzeStage ──
+
+class TestAnalyzeStage:
+    def test_no_clips_produces_empty_analysis(self, config):
+        result = AnalyzeStage()(make_state(config, clips=[]))
+        assert result["analysis"] == {}
+        assert result["romeo_data"] == {}
+
+    def test_serial_analysis_without_moltis(self, config, sample_clips, monkeypatch):
+        stage = AnalyzeStage()
+        monkeypatch.setattr(
+            stage, "_analyze_clip",
+            lambda clip, whisper, cfg: ClipAnalysis(clip_path=str(clip.path), avg_brightness=100.0),
+        )
+        result = stage(make_state(config, clips=sample_clips))
+        assert len(result["analysis"]) == 2
+        assert all(a.avg_brightness == 100.0 for a in result["analysis"].values())
+
+    def test_parallel_analysis_with_moltis(self, config, sample_clips, monkeypatch):
+        from pinocut.integrations.moltis_bridge import MoltisBridge
+        moltis = MoltisBridge()
+        stage = AnalyzeStage(moltis=moltis)
+        monkeypatch.setattr(
+            stage, "_analyze_clip",
+            lambda clip, whisper, cfg: ClipAnalysis(clip_path=str(clip.path), avg_brightness=50.0),
+        )
+        result = stage(make_state(config, clips=sample_clips))
+        assert len(result["analysis"]) == 2
+        moltis.shutdown()
+
+    def test_analysis_failure_uses_empty_fallback(self, config, sample_clips, monkeypatch):
+        stage = AnalyzeStage()
+        def _fail(clip, whisper, cfg):
+            raise RuntimeError("mock fail")
+        monkeypatch.setattr(stage, "_analyze_clip", _fail)
+        result = stage(make_state(config, clips=sample_clips))
+        assert len(result["analysis"]) == len(sample_clips)
+        assert all(a.speech_segments == [] for a in result["analysis"].values())
+        assert any(e.severity == ErrorSeverity.WARN for e in result["errors"])
+
+    def test_cache_hit_skips_analyze(self, config, sample_clips, monkeypatch):
+        from pinocut.integrations.moltis_bridge import MoltisBridge
+        moltis = MoltisBridge()
+        clip = sample_clips[0]
+        cache_key = f"analysis:{clip.path.name}:{clip.duration}"
+        moltis.memory.set(cache_key, {
+            "clip_path": str(clip.path),
+            "speech_segments": [(1.0, 2.0)],
+            "first_frame_hist": None,
+            "last_frame_hist": None,
+            "avg_brightness": 77.0,
+        })
+        stage = AnalyzeStage(moltis=moltis)
+        calls = {"n": 0}
+        def _count(clip, whisper, cfg):
+            calls["n"] += 1
+            return ClipAnalysis(clip_path=str(clip.path))
+        monkeypatch.setattr(stage, "_analyze_clip", _count)
+        result = stage(make_state(config, clips=[clip]))
+        assert result["analysis"][str(clip.path)].speech_segments == [(1.0, 2.0)]
+        assert calls["n"] == 0  # cache was used, _analyze_clip never called
+        moltis.shutdown()
+
+
+# ── RenderStage ──
+
+class TestRenderStage:
+    def test_no_clips_fatal_moviepy(self, config):
+        result = RenderStage()(make_state(config, clips=[]))
+        assert result["output_path"] is None
+        assert any(e.severity == ErrorSeverity.FATAL for e in result["errors"])
+
+    def test_no_clips_fatal_ffmpeg(self, config):
+        result = RenderStage(render_mode="ffmpeg")(make_state(config, clips=[]))
+        assert result["output_path"] is None
+        assert any(e.severity == ErrorSeverity.FATAL for e in result["errors"])
+
+    def test_ffmpeg_normalize_failure_records_fatal(self, config, sample_clips, monkeypatch):
+        stage = RenderStage(render_mode="ffmpeg")
+        monkeypatch.setattr(stage, "_run_ffmpeg", lambda args: 1)
+        result = stage(make_state(config, clips=sample_clips))
+        assert result["output_path"] is None
+        assert any(e.severity == ErrorSeverity.FATAL for e in result["errors"])
+
+    def test_ffmpeg_success_sets_output_path(self, tmp_path, monkeypatch):
+        out = tmp_path / "out.mp4"
+        cfg = ProjectConfig(input_folder=tmp_path / "footage", output_path=out)
+        clips = [ClipSegment(path=tmp_path / "clip1.mp4", duration=5.0, has_audio=False,
+                             resolution=(1920, 1080), fps=30.0)]
+        stage = RenderStage(render_mode="ffmpeg")
+
+        def _mock_ffmpeg(args):
+            dest = Path(args[-1])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+            return 0
+
+        monkeypatch.setattr(stage, "_run_ffmpeg", _mock_ffmpeg)
+        result = stage(make_state(cfg, clips=clips))
+        assert result["output_path"] == str(out)
+
+    def test_ffmpeg_applies_lut3d_when_color_grade_set(self, tmp_path, monkeypatch):
+        out = tmp_path / "out.mp4"
+        cfg = ProjectConfig(input_folder=tmp_path / "footage", output_path=out)
+        clips = [ClipSegment(path=tmp_path / "clip1.mp4", duration=5.0, has_audio=False,
+                             resolution=(1920, 1080), fps=30.0)]
+        stage = RenderStage(render_mode="ffmpeg")
+
+        captured: list[list[str]] = []
+
+        def _mock_ffmpeg(args):
+            captured.append(list(args))
+            dest = Path(args[-1])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+            return 0
+
+        monkeypatch.setattr(stage, "_run_ffmpeg", _mock_ffmpeg)
+        state = make_state(cfg, clips=clips, color_grade=ColorGradeStyle.CINEMATIC)
+        result = stage(state)
+
+        # The normalize call (first ffmpeg invocation) must include -vf lut3d=...
+        norm_args = captured[0]
+        assert "-vf" in norm_args
+        lut_arg = norm_args[norm_args.index("-vf") + 1]
+        assert lut_arg.startswith("lut3d=") and lut_arg.endswith(".cube")
+
+    def test_ffmpeg_no_lut_when_color_grade_none(self, tmp_path, monkeypatch):
+        out = tmp_path / "out.mp4"
+        cfg = ProjectConfig(input_folder=tmp_path / "footage", output_path=out)
+        clips = [ClipSegment(path=tmp_path / "clip1.mp4", duration=5.0, has_audio=False,
+                             resolution=(1920, 1080), fps=30.0)]
+        stage = RenderStage(render_mode="ffmpeg")
+
+        captured: list[list[str]] = []
+
+        def _mock_ffmpeg(args):
+            captured.append(list(args))
+            dest = Path(args[-1])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+            return 0
+
+        monkeypatch.setattr(stage, "_run_ffmpeg", _mock_ffmpeg)
+        result = stage(make_state(cfg, clips=clips))
+        assert "-vf" not in captured[0]
+
+
+# ── Ken Burns wiring ──
+
+class TestKenBurnsWiring:
+    def test_silent_clips_marked_for_ken_burns(self, config, sample_clips):
+        # sample_clips[0] has speech, sample_clips[1] does not
+        result = TitleStage()(make_state(config, clips=sample_clips, romeo_data={}))
+        kb = result.get("ken_burns_clips", [])
+        assert str(sample_clips[1].path) in kb
+        assert str(sample_clips[0].path) not in kb
+
+    def test_speech_clips_not_marked_for_ken_burns(self, config, sample_clips):
+        result = TitleStage()(make_state(config, clips=sample_clips, romeo_data={}))
+        assert str(sample_clips[0].path) not in result.get("ken_burns_clips", [])
+
+    def test_write_cube_lut_produces_valid_file(self, tmp_path):
+        path = tmp_path / "test.cube"
+        assert write_cube_lut(ColorGradeStyle.CINEMATIC, path, size=4)
+        lines = path.read_text().splitlines()
+        assert lines[0] == "LUT_3D_SIZE 4"
+        assert len(lines) == 1 + 4 ** 3  # header + 64 entries
+
+    def test_write_cube_lut_none_returns_false(self, tmp_path):
+        assert not write_cube_lut(ColorGradeStyle.NONE, tmp_path / "none.cube")
 
 
 # ── Utils ──

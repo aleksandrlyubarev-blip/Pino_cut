@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -91,6 +92,42 @@ LUT_FUNCTIONS: dict[ColorGradeStyle, Callable[[np.ndarray], np.ndarray]] = {
     ColorGradeStyle.VINTAGE: _vintage_lut,
     ColorGradeStyle.CINEMATIC: _cinematic_lut,
 }
+
+
+def write_cube_lut(style: ColorGradeStyle, path: Path, size: int = 17) -> bool:
+    """Write a .cube LUT file for use with FFmpeg's lut3d filter.
+
+    The .cube format iterates R fastest, B slowest. Samples the numpy LUT
+    function on a size×size×size grid to produce a device-independent cube.
+
+    Args:
+        style: Color grade style to export
+        path: Destination .cube file path
+        size: LUT grid dimension (17 gives good quality/speed balance)
+
+    Returns:
+        True if written, False if style has no LUT (e.g. NONE)
+    """
+    fn = LUT_FUNCTIONS.get(style)
+    if fn is None:
+        return False
+
+    steps = np.linspace(0, 255, size).astype(np.uint8)
+    # Build all sample points with R varying fastest, B slowest (.cube spec)
+    r_vals = np.tile(steps, size * size)
+    g_vals = np.repeat(np.tile(steps, size), size)
+    b_vals = np.repeat(steps, size * size)
+
+    # Shape (N, 1, 3) to match the (H, W, 3) frame format the LUT functions expect
+    inputs = np.stack([r_vals, g_vals, b_vals], axis=1)[:, np.newaxis, :].astype(np.uint8)
+    outputs = fn(inputs)[:, 0, :] / 255.0  # (N, 3)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as f:
+        f.write(f"LUT_3D_SIZE {size}\n")
+        for r_out, g_out, b_out in outputs:
+            f.write(f"{r_out:.6f} {g_out:.6f} {b_out:.6f}\n")
+    return True
 
 
 def apply_color_grade(frame: np.ndarray, style: ColorGradeStyle) -> np.ndarray:
