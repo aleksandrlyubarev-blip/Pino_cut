@@ -13,6 +13,8 @@ from typing import Callable
 
 import numpy as np
 
+from pinocut.config import ColorGradeStyle
+
 
 # ══════════════════════════════════════════════
 #  LUT COLOR GRADING
@@ -64,18 +66,18 @@ def _cinematic_lut(frame: np.ndarray) -> np.ndarray:
 
     # Shadow mask (dark-to-mid areas) and highlight mask (bright areas)
     # Extend shadow mask into midtones so mid-gray receives a teal push
-    shadow_mask = np.clip(1.5 - luminance / 128.0, 0, 1)[:, :, np.newaxis]
-    highlight_mask = np.clip((luminance - 128.0) / 128.0, 0, 1)[:, :, np.newaxis]
+    shadow_mask = np.clip(1.5 - luminance / 128.0, 0, 1)
+    highlight_mask = np.clip((luminance - 128.0) / 128.0, 0, 1)
 
     # Teal in shadows (reduce red, boost blue-green)
-    result[:, :, 0] = result[:, :, 0] - shadow_mask[:, :, 0] * 15
-    result[:, :, 1] = result[:, :, 1] + shadow_mask[:, :, 0] * 5
-    result[:, :, 2] = result[:, :, 2] + shadow_mask[:, :, 0] * 18
+    result[:, :, 0] -= shadow_mask * 15
+    result[:, :, 1] += shadow_mask * 5
+    result[:, :, 2] += shadow_mask * 18
 
     # Orange in highlights (boost red, slight green, reduce blue)
-    result[:, :, 0] = result[:, :, 0] + highlight_mask[:, :, 0] * 12
-    result[:, :, 1] = result[:, :, 1] + highlight_mask[:, :, 0] * 4
-    result[:, :, 2] = result[:, :, 2] - highlight_mask[:, :, 0] * 10
+    result[:, :, 0] += highlight_mask * 12
+    result[:, :, 1] += highlight_mask * 4
+    result[:, :, 2] -= highlight_mask * 10
 
     # Contrast boost
     result = (result - 128) * 1.08 + 128
@@ -83,20 +85,20 @@ def _cinematic_lut(frame: np.ndarray) -> np.ndarray:
     return np.clip(result, 0, 255).astype(np.uint8)
 
 
-LUT_FUNCTIONS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
-    "warm": _warm_lut,
-    "cold": _cold_lut,
-    "vintage": _vintage_lut,
-    "cinematic": _cinematic_lut,
+LUT_FUNCTIONS: dict[ColorGradeStyle, Callable[[np.ndarray], np.ndarray]] = {
+    ColorGradeStyle.WARM: _warm_lut,
+    ColorGradeStyle.COLD: _cold_lut,
+    ColorGradeStyle.VINTAGE: _vintage_lut,
+    ColorGradeStyle.CINEMATIC: _cinematic_lut,
 }
 
 
-def apply_color_grade(frame: np.ndarray, style: str) -> np.ndarray:
+def apply_color_grade(frame: np.ndarray, style: ColorGradeStyle) -> np.ndarray:
     """Apply color grading LUT to a frame.
 
     Args:
         frame: RGB uint8 frame (H, W, 3)
-        style: LUT style name from ColorGradeStyle
+        style: ColorGradeStyle enum value
 
     Returns:
         Color-graded frame (H, W, 3)
@@ -107,11 +109,11 @@ def apply_color_grade(frame: np.ndarray, style: str) -> np.ndarray:
     return fn(frame)
 
 
-def make_color_grade_filter(style: str) -> Callable[[np.ndarray], np.ndarray] | None:
+def make_color_grade_filter(style: ColorGradeStyle) -> Callable[[np.ndarray], np.ndarray] | None:
     """Get a moviepy-compatible frame filter function.
 
     Usage with moviepy:
-        clip = clip.fl_image(make_color_grade_filter("cinematic"))
+        clip = clip.fl_image(make_color_grade_filter(ColorGradeStyle.CINEMATIC))
     """
     fn = LUT_FUNCTIONS.get(style)
     return fn

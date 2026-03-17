@@ -87,8 +87,7 @@ class RenderStage(BaseStage):
                     vclip = vclip.subclip(0, config.max_duration)
 
                 # ── LUT Color Grading ──
-                grade_style = color_grade.value if isinstance(color_grade, ColorGradeStyle) else str(color_grade)
-                grade_fn = make_color_grade_filter(grade_style)
+                grade_fn = make_color_grade_filter(color_grade)
                 if grade_fn:
                     vclip = vclip.fl_image(grade_fn)
 
