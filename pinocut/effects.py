@@ -62,8 +62,9 @@ def _cinematic_lut(frame: np.ndarray) -> np.ndarray:
     result = frame.astype(np.float32)
     luminance = 0.299 * result[:, :, 0] + 0.587 * result[:, :, 1] + 0.114 * result[:, :, 2]
 
-    # Shadow mask (dark areas) and highlight mask (bright areas)
-    shadow_mask = np.clip(1.0 - luminance / 128.0, 0, 1)[:, :, np.newaxis]
+    # Shadow mask (dark-to-mid areas) and highlight mask (bright areas)
+    # Extend shadow mask into midtones so mid-gray receives a teal push
+    shadow_mask = np.clip(1.5 - luminance / 128.0, 0, 1)[:, :, np.newaxis]
     highlight_mask = np.clip((luminance - 128.0) / 128.0, 0, 1)[:, :, np.newaxis]
 
     # Teal in shadows (reduce red, boost blue-green)
