@@ -143,6 +143,31 @@ pinocut/
 pytest tests/ -v
 ```
 
+## Pinnocat Scene Stitcher v1
+
+The repository now includes a scene-level spec for the first Pinnocat editing mode:
+
+- [docs/pinnocat-scene-stitcher-v1.md](docs/pinnocat-scene-stitcher-v1.md)
+- [docs/pinnocat-tool-api-v1.md](docs/pinnocat-tool-api-v1.md)
+- [docs/pinnocat-timeline-v1.schema.json](docs/pinnocat-timeline-v1.schema.json)
+- [docs/pinnocat-timeline-v1.example.json](docs/pinnocat-timeline-v1.example.json)
+
+This spec narrows v1 to a Scene Stitcher Agent where Romeo orchestrates scene assembly, Andrew scores technical quality, and editing runs through bounded tool calls.
+
+### Scene CLI skeleton
+
+```bash
+pinocut scene build ./raw_footage \
+  --goal "arrival at abandoned spaceport" \
+  --scene-id scene_03 \
+  --template cinematic_montage \
+  --duration 35 \
+  --style "cinematic dark sci-fi" \
+  --output-dir ./output
+```
+
+Current v1 code path exports scene artifacts as timeline and preview JSON manifests. It does not yet replace the full media render pipeline.
+
 ## License
 
 MIT

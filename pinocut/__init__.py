@@ -13,5 +13,12 @@ __version__ = "1.0.0"
 
 from pinocut.agent import PinoCutAgent, build_graph
 from pinocut.config import ProjectConfig
+from pinocut.scene_stitcher import SceneBuildRequest, SceneStitcherAgent
 
-__all__ = ["PinoCutAgent", "ProjectConfig", "build_graph"]
+__all__ = [
+    "PinoCutAgent",
+    "ProjectConfig",
+    "SceneBuildRequest",
+    "SceneStitcherAgent",
+    "build_graph",
+]
