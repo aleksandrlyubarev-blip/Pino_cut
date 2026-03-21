@@ -74,6 +74,7 @@ class SceneStitcherAgent:
             available_clips=clips,
             music_track=str(request.music_path) if request.music_path else None,
             voiceover_track=str(request.voiceover_path) if request.voiceover_path else None,
+            subtitle_track=request.subtitle_language,
             export_profile=request.export_profile,
             output_dir=str(request.output_dir),
         )
@@ -215,14 +216,16 @@ class SceneStitcherAgent:
         scene_state.rejected_clips.extend(rejected_extra)
 
     def _assemble_timeline(self, scene_state: SceneState) -> None:
+        clip_map = {clip.path.stem: clip for clip in scene_state.available_clips}
         selected_clips = [
-            clip for clip in scene_state.available_clips if clip.path.stem in scene_state.approved_clips
+            clip_map[clip_id]
+            for clip_id in scene_state.approved_clips
+            if clip_id in clip_map
         ]
         if not selected_clips:
             return
 
         target_per_clip = scene_state.target_duration_sec / len(selected_clips)
-        cursor = 0.0
         segments: list[TimelineSegment] = []
 
         for index, clip in enumerate(selected_clips, start=1):
@@ -232,15 +235,15 @@ class SceneStitcherAgent:
                 clip_id,
                 start_sec=0.0,
                 end_sec=clip_target,
-                timeline_in_sec=cursor,
+                timeline_in_sec=0.0,
                 segment_id=f"seg_{index:02d}",
             )
             segment.notes.extend(scene_state.clip_scores[clip_id].notes)
             segments.append(segment)
-            cursor = segment.timeline_out_sec
 
         self.tools.concat_clips(segments, transition_type="cut")
         self._apply_template_transitions(scene_state.editing_template, segments)
+        actual_duration = self._reflow_timeline(segments)
 
         timeline = TimelineV1(
             project_id=scene_state.project_id,
@@ -251,7 +254,7 @@ class SceneStitcherAgent:
             editing_mode=scene_state.editing_mode,
             editing_template=scene_state.editing_template,
             target_duration_sec=scene_state.target_duration_sec,
-            actual_duration_sec=round(cursor, 3),
+            actual_duration_sec=actual_duration,
             video_segments=segments,
             used_clips=[clip.path.stem for clip in selected_clips],
             rejected_clips=scene_state.rejected_clips,
@@ -302,6 +305,18 @@ class SceneStitcherAgent:
                 )
                 left.transition_out = transition
                 right.transition_in = transition
+
+    def _reflow_timeline(self, segments: list[TimelineSegment]) -> float:
+        cursor = 0.0
+        for segment in segments:
+            source_duration = round(segment.source_out_sec - segment.source_in_sec, 3)
+            segment.timeline_in_sec = round(cursor, 3)
+            segment.timeline_out_sec = round(segment.timeline_in_sec + source_duration, 3)
+            overlap = 0.0
+            if segment.transition_out is not None:
+                overlap = max(0.0, segment.transition_out.duration_sec)
+            cursor = max(0.0, segment.timeline_out_sec - overlap)
+        return round(segments[-1].timeline_out_sec, 3) if segments else 0.0
 
     def _attach_audio(self, scene_state: SceneState) -> None:
         if scene_state.timeline is None:

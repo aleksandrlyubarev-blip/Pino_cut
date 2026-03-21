@@ -10,14 +10,22 @@ from pinocut.scene_stitcher import SceneBuildRequest, SceneStitcherAgent
 from pinocut.state import ClipSegment, ExportProfile, SceneState
 
 
-def make_clip(tmp_path: Path, name: str, *, duration: float, resolution: tuple[int, int], fps: float = 24.0) -> ClipSegment:
+def make_clip(
+    tmp_path: Path,
+    name: str,
+    *,
+    duration: float,
+    resolution: tuple[int, int],
+    fps: float = 24.0,
+    metadata: dict | None = None,
+) -> ClipSegment:
     return ClipSegment(
         path=tmp_path / f"{name}.mp4",
         duration=duration,
         has_audio=True,
         resolution=resolution,
         fps=fps,
-        metadata={},
+        metadata=metadata or {},
     )
 
 
@@ -94,6 +102,35 @@ def test_scene_build_exports_timeline_and_preview(tmp_path: Path) -> None:
     assert payload["tracks"]["video"][1]["transition_out"]["type"] == "crossfade"
 
 
+def test_scene_timeline_keeps_approved_order_and_transition_overlap(tmp_path: Path) -> None:
+    clips = [
+        make_clip(tmp_path, "c04", duration=11.0, resolution=(1920, 1080), fps=20.0),
+        make_clip(tmp_path, "c03", duration=2.2, resolution=(1920, 1080)),
+        make_clip(tmp_path, "c02", duration=6.0, resolution=(1280, 720)),
+        make_clip(tmp_path, "c01", duration=6.0, resolution=(1920, 1080)),
+    ]
+
+    scene = SceneState(
+        project_id="rfv_pinnocat_001",
+        scene_id="scene_04",
+        scene_goal="arrival at abandoned spaceport",
+        style_profile="cinematic dark sci-fi",
+        target_duration_sec=20.0,
+        editing_template="cinematic_montage",
+        available_clips=clips,
+        output_dir=str(tmp_path / "output"),
+    )
+
+    result = SceneStitcherAgent().build_scene(scene)
+
+    assert result.timeline is not None
+    assert result.approved_clips == ["c01", "c02", "c03", "c04"]
+    assert result.timeline.used_clips == result.approved_clips
+    assert [segment.clip_id for segment in result.timeline.video_segments] == result.approved_clips
+    assert result.timeline.video_segments[2].timeline_in_sec < result.timeline.video_segments[1].timeline_out_sec
+    assert result.timeline.actual_duration_sec == 16.8
+
+
 def test_parse_scene_build_args() -> None:
     args = parse_scene_args(
         [
@@ -128,9 +165,11 @@ def test_scene_request_builds_state_from_folder(tmp_path: Path) -> None:
         input_folder=clips_dir,
         output_dir=tmp_path / "output",
         scene_goal="test",
+        subtitle_language="en",
     )
 
     result = SceneStitcherAgent().build_from_request(request)
 
     assert result.scene_id == "scene_01"
+    assert result.subtitle_track == "en"
     assert result.errors  # probe fails on fake media, but the path is exercised
