@@ -56,6 +56,30 @@ def test_scene_rejects_low_quality_clips(tmp_path: Path) -> None:
     assert result.clip_scores["low_res"].passes_gate is False
 
 
+def test_andrew_rubric_returns_spec_dimensions(tmp_path: Path) -> None:
+    clip = make_clip(
+        tmp_path,
+        "spaceport_arrival",
+        duration=6.0,
+        resolution=(1920, 1080),
+        metadata={"scene_description": "arrival at abandoned spaceport", "shake_score": 0.08},
+    )
+
+    score = SceneStitcherAgent().score_clip_full_rubric(
+        clip,
+        "arrival at abandoned spaceport",
+    )
+
+    assert set(score) == {
+        "visual_quality",
+        "continuity_fit",
+        "prompt_match",
+        "motion_stability",
+        "timeline_usefulness",
+    }
+    assert all(1 <= value <= 5 for value in score.values())
+
+
 def test_scene_build_exports_timeline_and_preview(tmp_path: Path) -> None:
     output_dir = tmp_path / "output"
     music_path = tmp_path / "music.mp3"
@@ -102,6 +126,55 @@ def test_scene_build_exports_timeline_and_preview(tmp_path: Path) -> None:
     assert payload["scene_id"] == "scene_03"
     assert payload["editing_template"] == "cinematic_montage"
     assert payload["tracks"]["video"][1]["transition_out"]["type"] == "crossfade"
+
+
+def test_scene_generates_andrew_reports_and_bassito_jobs(tmp_path: Path) -> None:
+    clips = [
+        make_clip(
+            tmp_path,
+            "bridge_a",
+            duration=2.2,
+            resolution=(1920, 1080),
+            metadata={
+                "scene_description": "arrival at abandoned spaceport",
+                "shake_score": 0.36,
+                "brightness_variance": 45,
+            },
+        ),
+        make_clip(
+            tmp_path,
+            "bridge_b",
+            duration=2.4,
+            resolution=(1920, 1080),
+            metadata={"scene_description": "abandoned spaceport corridor"},
+        ),
+    ]
+
+    scene = SceneState(
+        project_id="rfv_pinnocat_001",
+        scene_id="scene_05",
+        scene_goal="arrival at abandoned spaceport",
+        style_profile="cinematic dark sci-fi",
+        target_duration_sec=20.0,
+        editing_mode="hybrid",
+        editing_template="cinematic_montage",
+        available_clips=clips,
+        output_dir=str(tmp_path / "output"),
+    )
+
+    result = SceneStitcherAgent().build_scene(scene)
+    clip_map = {clip.path.stem: clip for clip in result.available_clips}
+    job_types = {job["job_type"] for job in result.regeneration_jobs}
+
+    assert result.bridge_jobs
+    assert result.bridge_jobs[0]["job_type"] == "bridge_shot"
+    assert "extend" in job_types
+    assert "restyle" in job_types
+    assert result.reviews["andrew:bridge_a"].startswith("Clip bridge_a:")
+    assert clip_map["bridge_a"].metadata["bassito_prepared"] is True
+    assert "reframing" in clip_map["bridge_a"].metadata
+    assert result.timeline is not None
+    assert result.timeline.reviews["bassito"].startswith("Prepared")
 
 
 def test_scene_timeline_keeps_approved_order_and_transition_overlap(tmp_path: Path) -> None:

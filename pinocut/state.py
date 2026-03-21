@@ -311,6 +311,8 @@ class SceneState:
     export_profile: ExportProfile = field(default_factory=ExportProfile)
     output_dir: str = "./output"
     timeline: TimelineV1 | None = None
+    bridge_jobs: list[dict[str, Any]] = field(default_factory=list)
+    regeneration_jobs: list[dict[str, Any]] = field(default_factory=list)
     reviews: dict[str, str] = field(default_factory=dict)
     version_history: list[str] = field(default_factory=list)
     errors: list[StageError] = field(default_factory=list)
@@ -336,6 +338,8 @@ class SceneState:
             "export_profile": _dataclass_to_dict(self.export_profile),
             "output_dir": self.output_dir,
             "timeline": self.timeline.to_dict() if self.timeline else None,
+            "bridge_jobs": self.bridge_jobs,
+            "regeneration_jobs": self.regeneration_jobs,
             "reviews": self.reviews,
             "version_history": self.version_history,
             "errors": [str(error) for error in self.errors],
