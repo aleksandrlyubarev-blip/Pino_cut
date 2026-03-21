@@ -8,6 +8,8 @@ from pathlib import Path
 
 from pinocut.config import ColorGradeStyle, ProjectConfig, RenderPreset
 
+SCENE_SUBCOMMANDS = {"build"}
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -132,7 +134,7 @@ def main_scene(argv: list[str] | None = None) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv[1:]
-    if argv and argv[0] == "scene":
+    if len(argv) >= 2 and argv[0] == "scene" and argv[1] in SCENE_SUBCOMMANDS:
         return main_scene(argv[1:])
 
     args = parse_args(argv)

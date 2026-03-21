@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import ModuleType
 
+import pinocut.cli as cli
 from pinocut.cli import parse_scene_args
 from pinocut.scene_stitcher import SceneBuildRequest, SceneStitcherAgent
 from pinocut.state import ClipSegment, ExportProfile, SceneState
@@ -153,6 +155,46 @@ def test_parse_scene_build_args() -> None:
     assert args.scene_id == "scene_03"
     assert args.template == "trailer_cut"
     assert args.duration == 35.0
+
+
+def test_main_routes_scene_subcommand(monkeypatch) -> None:
+    def fake_main_scene(argv: list[str] | None = None) -> int:
+        assert argv == ["build", "clips", "--goal", "arrival"]
+        return 7
+
+    monkeypatch.setattr(cli, "main_scene", fake_main_scene)
+
+    result = cli.main(["scene", "build", "clips", "--goal", "arrival"])
+
+    assert result == 7
+
+
+def test_main_preserves_legacy_folder_named_scene(monkeypatch) -> None:
+    parsed = cli.parse_args(["scene"])
+
+    def fake_parse_args(argv: list[str] | None = None):
+        assert argv == ["scene"]
+        return parsed
+
+    class FakeAgent:
+        def __init__(self, *, structured_logs: bool = False):
+            self.structured_logs = structured_logs
+
+        def run(self, config):
+            assert config.input_folder == Path("scene")
+            return {"output_path": "output.mp4"}
+
+        def metrics_report(self) -> str:
+            return "metrics"
+
+    monkeypatch.setattr(cli, "parse_args", fake_parse_args)
+    fake_agent_module = ModuleType("pinocut.agent")
+    fake_agent_module.PinoCutAgent = FakeAgent
+    monkeypatch.setitem(__import__("sys").modules, "pinocut.agent", fake_agent_module)
+
+    result = cli.main(["scene"])
+
+    assert result == 0
 
 
 def test_scene_request_builds_state_from_folder(tmp_path: Path) -> None:
