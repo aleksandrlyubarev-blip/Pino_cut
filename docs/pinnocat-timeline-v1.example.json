@@ -1,0 +1,72 @@
+{
+  "project_id": "rfv_pinnocat_001",
+  "scene_id": "scene_03",
+  "timeline_version": 1,
+  "scene_goal": "arrival at abandoned spaceport",
+  "style_profile": "cinematic dark sci-fi",
+  "editing_mode": "hybrid",
+  "editing_template": "cinematic_montage",
+  "target_duration_sec": 35,
+  "actual_duration_sec": 32.8,
+  "tracks": {
+    "video": [
+      {
+        "segment_id": "seg_01",
+        "clip_id": "c04",
+        "source_in_sec": 0.0,
+        "source_out_sec": 5.0,
+        "timeline_in_sec": 0.0,
+        "timeline_out_sec": 5.0,
+        "transition_out": {
+          "type": "cut",
+          "duration_sec": 0.0
+        },
+        "notes": ["opening frame", "good atmosphere"]
+      },
+      {
+        "segment_id": "seg_02",
+        "clip_id": "c02",
+        "source_in_sec": 1.2,
+        "source_out_sec": 6.7,
+        "timeline_in_sec": 5.0,
+        "timeline_out_sec": 10.5,
+        "transition_out": {
+          "type": "crossfade",
+          "duration_sec": 0.4
+        },
+        "notes": ["movement beat"]
+      },
+      {
+        "segment_id": "seg_03",
+        "clip_id": "c07",
+        "source_in_sec": 0.5,
+        "source_out_sec": 7.0,
+        "timeline_in_sec": 10.1,
+        "timeline_out_sec": 16.6,
+        "notes": ["tension rise"]
+      }
+    ],
+    "audio": [
+      {
+        "track_id": "music_dark_ambient_01",
+        "role": "music",
+        "timeline_in_sec": 0.0,
+        "timeline_out_sec": 32.8,
+        "gain_db": -7.0,
+        "duck_music": false
+      }
+    ],
+    "subtitles": []
+  },
+  "used_clips": ["c04", "c02", "c07", "c01", "c05"],
+  "rejected_clips": ["c03", "c06", "c08"],
+  "reviews": {
+    "romeo": "Good atmospheric opening and a stronger final tension beat.",
+    "andrew": "One selected clip has minor instability near the end; trim if needed."
+  },
+  "export_profile": {
+    "resolution": "1920x1080",
+    "fps": 24,
+    "format": "mp4"
+  }
+}
