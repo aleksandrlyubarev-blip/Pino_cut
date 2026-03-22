@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import UTC, datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -435,9 +436,11 @@ class SceneStitcherAgent:
             scene_state.output_dir,
             comment="Initial rough cut export",
         )
+        scene_ops_path = self._export_scene_ops_snapshot(scene_state)
         scene_state.version_history.append(str(version_path))
         scene_state.reviews["preview_path"] = str(preview_path)
         scene_state.reviews["timeline_path"] = str(timeline_path)
+        scene_state.reviews["scene_ops_path"] = str(scene_ops_path)
 
     def _discover_clip_paths(self, input_folder: Path, max_clips: int) -> list[Path]:
         if not input_folder.exists():
@@ -666,3 +669,159 @@ class SceneStitcherAgent:
         semantic_text = " ".join(semantic_parts).lower()
         clip_tokens = set(re.findall(r"[a-z0-9]+", semantic_text))
         return len(goal_tokens & clip_tokens)
+
+    def _export_scene_ops_snapshot(self, scene_state: SceneState) -> Path:
+        output_path = Path(scene_state.output_dir) / f"{scene_state.scene_id}.scene-ops.json"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            self._build_scene_ops_snapshot(scene_state),
+            encoding="utf-8",
+        )
+        return output_path
+
+    def _build_scene_ops_snapshot(self, scene_state: SceneState) -> str:
+        clip_scores = {
+            clip_id: {
+                "visualQuality": score.visual_quality,
+                "continuityFit": score.continuity_fit,
+                "promptMatch": score.prompt_match,
+                "motionStability": score.motion_stability,
+                "timelineUsefulness": score.timeline_usefulness,
+                "recommendedAction": score.recommended_action,
+            }
+            for clip_id, score in scene_state.clip_scores.items()
+        }
+        quality_breakdown = self._build_quality_breakdown(scene_state)
+        warnings = self._build_andrew_warnings(scene_state)
+        recommended_actions = self._build_andrew_recommended_actions(scene_state)
+        bassito_jobs = self._build_bassito_jobs(scene_state)
+        queue_state = self._build_scene_queue_state(scene_state, bassito_jobs)
+        hitl_decision = "modify" if warnings or recommended_actions else "approve"
+        confidence = self._build_andrew_confidence(scene_state, warnings)
+
+        payload = {
+            "source": "api",
+            "updatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "scene": {
+                "sceneId": scene_state.scene_id,
+                "sceneGoal": scene_state.scene_goal,
+                "editingTemplate": scene_state.editing_template,
+                "targetDurationSec": scene_state.target_duration_sec,
+                "actualDurationSec": (
+                    scene_state.timeline.actual_duration_sec if scene_state.timeline else 0.0
+                ),
+                "usedClips": scene_state.timeline.used_clips if scene_state.timeline else [],
+                "rejectedClips": list(scene_state.rejected_clips),
+                "queueState": queue_state,
+            },
+            "clipScores": clip_scores,
+            "andrew": {
+                "confidence": confidence,
+                "summary": self._build_scene_ops_andrew_summary(scene_state),
+                "warnings": warnings,
+                "recommendedActions": recommended_actions,
+                "qualityBreakdown": quality_breakdown,
+                "hitlDecision": hitl_decision,
+            },
+            "bassitoJobs": bassito_jobs,
+        }
+        import json
+
+        return json.dumps(payload, indent=2)
+
+    def _build_quality_breakdown(self, scene_state: SceneState) -> dict[str, float]:
+        scores = list(scene_state.clip_scores.values())
+        if not scores:
+            return {
+                "visual_quality": 0.0,
+                "continuity_fit": 0.0,
+                "prompt_match": 0.0,
+                "motion_stability": 0.0,
+                "timeline_usefulness": 0.0,
+            }
+        count = len(scores)
+        return {
+            "visual_quality": round(sum(score.visual_quality for score in scores) / count, 2),
+            "continuity_fit": round(sum(score.continuity_fit for score in scores) / count, 2),
+            "prompt_match": round(sum(score.prompt_match for score in scores) / count, 2),
+            "motion_stability": round(sum(score.motion_stability for score in scores) / count, 2),
+            "timeline_usefulness": round(sum(score.timeline_usefulness for score in scores) / count, 2),
+        }
+
+    def _build_andrew_warnings(self, scene_state: SceneState) -> list[str]:
+        warnings: list[str] = []
+        if not scene_state.timeline:
+            warnings.append("Scene timeline was not exported.")
+            return warnings
+        if scene_state.timeline.actual_duration_sec < scene_state.target_duration_sec * 0.9:
+            warnings.append("Scene is materially under target duration.")
+        if any(score.motion_stability <= 2 for score in scene_state.clip_scores.values()):
+            warnings.append("Average motion stability is below the preferred rough-cut threshold.")
+        if scene_state.bridge_jobs:
+            warnings.append(f"{len(scene_state.bridge_jobs)} bridge shot request is still queued.")
+        if scene_state.regeneration_jobs:
+            warnings.append(f"{len(scene_state.regeneration_jobs)} regeneration jobs are queued.")
+        return warnings
+
+    def _build_andrew_recommended_actions(self, scene_state: SceneState) -> list[str]:
+        actions = [
+            f"{clip_id}: {score.recommended_action}"
+            for clip_id, score in scene_state.clip_scores.items()
+            if score.recommended_action != "keep"
+        ]
+        if scene_state.bridge_jobs:
+            actions.append("Review bridge-shot output before final export.")
+        if scene_state.regeneration_jobs:
+            actions.append("Run queued Bassito regeneration jobs and rebuild the rough cut.")
+        return actions
+
+    def _build_bassito_jobs(self, scene_state: SceneState) -> list[dict[str, str]]:
+        jobs: list[dict[str, str]] = []
+        queued_jobs = list(scene_state.bridge_jobs) + list(scene_state.regeneration_jobs)
+        for index, job in enumerate(queued_jobs, start=1):
+            source_clip_id = job.get("clip_id")
+            job_type = str(job.get("job_type", "bridge_shot"))
+            jobs.append(
+                {
+                    "jobId": str(job.get("job_id", f"{scene_state.scene_id}_{job_type}_{index:02d}")),
+                    "jobType": job_type,
+                    "status": str(job.get("status", "queued")),
+                    **({"sourceClipId": str(source_clip_id)} if source_clip_id else {}),
+                    **({"artifactPath": str(job["artifact_path"])} if "artifact_path" in job else {}),
+                }
+            )
+        return jobs
+
+    def _build_scene_queue_state(
+        self,
+        scene_state: SceneState,
+        bassito_jobs: list[dict[str, str]],
+    ) -> str:
+        if bassito_jobs:
+            return "waiting_bassito"
+        if scene_state.errors:
+            return "reviewing"
+        if scene_state.timeline:
+            return "completed"
+        return "ready"
+
+    def _build_andrew_confidence(
+        self,
+        scene_state: SceneState,
+        warnings: list[str],
+    ) -> float:
+        if not scene_state.clip_scores:
+            return 0.0
+        quality = self._build_quality_breakdown(scene_state)
+        score_average = sum(quality.values()) / (5 * 5)
+        warning_penalty = min(0.25, len(warnings) * 0.05)
+        return round(max(0.0, min(1.0, score_average - warning_penalty)), 2)
+
+    def _build_scene_ops_andrew_summary(self, scene_state: SceneState) -> str:
+        if not scene_state.timeline:
+            return "Scene export did not produce a timeline."
+        return (
+            f"Scene {scene_state.scene_id} uses {len(scene_state.timeline.used_clips)} approved clips "
+            f"across {len(scene_state.timeline.video_segments)} timeline segments and remains usable "
+            f"for rough-cut review."
+        )

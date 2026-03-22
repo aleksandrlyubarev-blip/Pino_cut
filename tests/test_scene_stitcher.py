@@ -118,14 +118,27 @@ def test_scene_build_exports_timeline_and_preview(tmp_path: Path) -> None:
     timeline_path = output_dir / "scene_03.timeline.json"
     preview_path = output_dir / "scene_03.preview.json"
     version_path = output_dir / "scene_03.timeline.v1.json"
+    scene_ops_path = output_dir / "scene_03.scene-ops.json"
     assert timeline_path.exists()
     assert preview_path.exists()
     assert version_path.exists()
+    assert scene_ops_path.exists()
 
     payload = json.loads(timeline_path.read_text(encoding="utf-8"))
     assert payload["scene_id"] == "scene_03"
     assert payload["editing_template"] == "cinematic_montage"
     assert payload["tracks"]["video"][1]["transition_out"]["type"] == "crossfade"
+
+    scene_ops_payload = json.loads(scene_ops_path.read_text(encoding="utf-8"))
+    assert scene_ops_payload["scene"]["sceneId"] == "scene_03"
+    assert scene_ops_payload["scene"]["queueState"] in {
+        "completed",
+        "waiting_bassito",
+        "reviewing",
+        "ready",
+    }
+    assert "andrew" in scene_ops_payload
+    assert result.reviews["scene_ops_path"] == str(scene_ops_path)
 
 
 def test_scene_generates_andrew_reports_and_bassito_jobs(tmp_path: Path) -> None:

@@ -1,0 +1,73 @@
+name: Publish SceneOps Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_path:
+        description: Path to the exported SceneOps snapshot inside this repository
+        required: false
+        default: output/scene_01.scene-ops.json
+        type: string
+      source_url:
+        description: Optional public SceneOps JSON URL to forward instead of a local file
+        required: false
+        default: ""
+        type: string
+  workflow_call:
+    inputs:
+      snapshot_path:
+        description: Path to the exported SceneOps snapshot inside this repository
+        required: false
+        default: output/scene_01.scene-ops.json
+        type: string
+      source_url:
+        description: Optional public SceneOps JSON URL to forward instead of a local file
+        required: false
+        default: ""
+        type: string
+    secrets:
+      romeoflexvision_dispatch_token:
+        required: true
+
+jobs:
+  publish-scene-ops:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate dispatch inputs
+        shell: bash
+        run: |
+          if [[ -z "${{ inputs.snapshot_path }}" && -z "${{ inputs.source_url }}" ]]; then
+            echo "Either snapshot_path or source_url must be provided."
+            exit 1
+          fi
+
+      - name: Verify local SceneOps snapshot exists
+        if: ${{ inputs.source_url == '' }}
+        shell: bash
+        run: |
+          if [[ ! -f "${{ inputs.snapshot_path }}" ]]; then
+            echo "SceneOps snapshot not found: ${{ inputs.snapshot_path }}"
+            exit 1
+          fi
+
+      - name: Dispatch SceneOps snapshot to RomeoFlexVision
+        env:
+          ROMEOFLEXVISION_DISPATCH_TOKEN: ${{ secrets.romeoflexvision_dispatch_token || secrets.ROMEOFLEXVISION_DISPATCH_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -n "${{ inputs.source_url }}" ]]; then
+            python scripts/dispatch_scene_ops.py --source-url "${{ inputs.source_url }}"
+          else
+            python scripts/dispatch_scene_ops.py --snapshot "${{ inputs.snapshot_path }}"
+          fi
