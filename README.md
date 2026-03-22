@@ -168,6 +168,46 @@ pinocut scene build ./raw_footage \
 
 Current v1 code path exports scene artifacts as timeline and preview JSON manifests. It does not yet replace the full media render pipeline.
 
+### Dispatch SceneOps snapshots to RomeoFlexVision
+
+`PinoCut` can publish a frontend-ready SceneOps snapshot into the
+`RomeoFlexVision` GitHub Pages workflow without introducing a separate backend
+host.
+
+Required secret in the calling repository:
+
+```bash
+ROMEOFLEXVISION_DISPATCH_TOKEN
+```
+
+Example local dry run:
+
+```bash
+python scripts/dispatch_scene_ops.py \
+  --snapshot output/scene_03.scene-ops.json \
+  --dry-run
+```
+
+Example GitHub Actions step:
+
+```yaml
+- name: Dispatch SceneOps snapshot
+  env:
+    ROMEOFLEXVISION_DISPATCH_TOKEN: ${{ secrets.ROMEOFLEXVISION_DISPATCH_TOKEN }}
+  run: |
+    python scripts/dispatch_scene_ops.py \
+      --snapshot output/scene_03.scene-ops.json
+```
+
+If the snapshot is already published elsewhere, the same helper can dispatch a
+public URL instead:
+
+```bash
+python scripts/dispatch_scene_ops.py \
+  --source-url https://example.com/scene-ops.json \
+  --dry-run
+```
+
 ## License
 
 MIT
