@@ -151,6 +151,7 @@ The repository now includes a scene-level spec for the first Pinnocat editing mo
 - [docs/pinnocat-tool-api-v1.md](docs/pinnocat-tool-api-v1.md)
 - [docs/pinnocat-timeline-v1.schema.json](docs/pinnocat-timeline-v1.schema.json)
 - [docs/pinnocat-timeline-v1.example.json](docs/pinnocat-timeline-v1.example.json)
+- [docs/pinnocat-scene-ops-v1.example.json](docs/pinnocat-scene-ops-v1.example.json)
 
 This spec narrows v1 to a Scene Stitcher Agent where Romeo orchestrates scene assembly, Andrew scores technical quality, and editing runs through bounded tool calls.
 
@@ -178,6 +179,16 @@ output/<scene_id>.scene-ops.json
 `PinoCut` can publish a frontend-ready SceneOps snapshot into the
 `RomeoFlexVision` GitHub Pages workflow without introducing a separate backend
 host.
+
+The repository also keeps a canonical public example snapshot at:
+
+```text
+docs/pinnocat-scene-ops-v1.example.json
+```
+
+`RomeoFlexVision` can sync from that file directly over GitHub raw URLs, which
+keeps the frontend/backend contract alive even before a dedicated SceneOps API
+host is deployed.
 
 Required secret in the calling repository:
 

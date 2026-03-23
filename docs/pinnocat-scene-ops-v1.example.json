@@ -1,0 +1,95 @@
+{
+  "source": "api",
+  "updatedAt": "2026-03-22T09:40:00+02:00",
+  "scene": {
+    "sceneId": "scene_03",
+    "sceneGoal": "arrival at abandoned spaceport",
+    "editingTemplate": "cinematic_montage",
+    "targetDurationSec": 35,
+    "actualDurationSec": 32.8,
+    "usedClips": [
+      "c04",
+      "c02",
+      "c07",
+      "c01",
+      "c05"
+    ],
+    "rejectedClips": [
+      "c03",
+      "c06",
+      "c08"
+    ],
+    "queueState": "waiting_bassito"
+  },
+  "clipScores": {
+    "c04": {
+      "visualQuality": 4,
+      "continuityFit": 5,
+      "promptMatch": 4,
+      "motionStability": 4,
+      "timelineUsefulness": 5,
+      "recommendedAction": "keep"
+    },
+    "c02": {
+      "visualQuality": 4,
+      "continuityFit": 4,
+      "promptMatch": 4,
+      "motionStability": 2,
+      "timelineUsefulness": 4,
+      "recommendedAction": "request_restyle"
+    },
+    "c07": {
+      "visualQuality": 5,
+      "continuityFit": 4,
+      "promptMatch": 5,
+      "motionStability": 4,
+      "timelineUsefulness": 4,
+      "recommendedAction": "trim_for_pacing"
+    }
+  },
+  "andrew": {
+    "confidence": 0.74,
+    "summary": "Scene scene_03 uses 5 approved clips across 5 timeline segments, lands slightly under target duration, and remains usable for rough-cut review.",
+    "warnings": [
+      "Average motion stability is below the preferred rough-cut threshold.",
+      "1 bridge shot request is still queued.",
+      "2 regeneration jobs are queued."
+    ],
+    "recommendedActions": [
+      "c02: request_restyle",
+      "c07: trim_for_pacing",
+      "Review bridge-shot output before final export.",
+      "Run queued Bassito regeneration jobs and rebuild the rough cut."
+    ],
+    "qualityBreakdown": {
+      "visual_quality": 4.33,
+      "continuity_fit": 4.33,
+      "prompt_match": 4.33,
+      "motion_stability": 3.33,
+      "timeline_usefulness": 4.33
+    },
+    "hitlDecision": "skipped"
+  },
+  "bassitoJobs": [
+    {
+      "jobId": "pinocut_98d2af04c1",
+      "jobType": "bridge_shot",
+      "status": "queued",
+      "artifactPath": "output/pinocut_jobs/queued/pinocut_98d2af04c1.request.json"
+    },
+    {
+      "jobId": "pinocut_b7a4e2f019",
+      "jobType": "restyle",
+      "status": "completed_stub",
+      "sourceClipId": "c02",
+      "artifactPath": "output/pinocut_jobs/pinocut_b7a4e2f019/restyle.artifact.json"
+    },
+    {
+      "jobId": "pinocut_c31fb66780",
+      "jobType": "extend",
+      "status": "queued",
+      "sourceClipId": "c05",
+      "artifactPath": "output/pinocut_jobs/queued/pinocut_c31fb66780.request.json"
+    }
+  ]
+}
