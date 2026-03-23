@@ -143,6 +143,88 @@ pinocut/
 pytest tests/ -v
 ```
 
+## Pinnocat Scene Stitcher v1
+
+The repository now includes a scene-level spec for the first Pinnocat editing mode:
+
+- [docs/pinnocat-scene-stitcher-v1.md](docs/pinnocat-scene-stitcher-v1.md)
+- [docs/pinnocat-tool-api-v1.md](docs/pinnocat-tool-api-v1.md)
+- [docs/pinnocat-timeline-v1.schema.json](docs/pinnocat-timeline-v1.schema.json)
+- [docs/pinnocat-timeline-v1.example.json](docs/pinnocat-timeline-v1.example.json)
+
+This spec narrows v1 to a Scene Stitcher Agent where Romeo orchestrates scene assembly, Andrew scores technical quality, and editing runs through bounded tool calls.
+
+### Scene CLI skeleton
+
+```bash
+pinocut scene build ./raw_footage \
+  --goal "arrival at abandoned spaceport" \
+  --scene-id scene_03 \
+  --template cinematic_montage \
+  --duration 35 \
+  --style "cinematic dark sci-fi" \
+  --output-dir ./output
+```
+
+Current v1 code path exports scene artifacts as timeline and preview JSON manifests. It does not yet replace the full media render pipeline.
+It now also exports a frontend-ready SceneOps snapshot at:
+
+```text
+output/<scene_id>.scene-ops.json
+```
+
+### Dispatch SceneOps snapshots to RomeoFlexVision
+
+`PinoCut` can publish a frontend-ready SceneOps snapshot into the
+`RomeoFlexVision` GitHub Pages workflow without introducing a separate backend
+host.
+
+Required secret in the calling repository:
+
+```bash
+ROMEOFLEXVISION_DISPATCH_TOKEN
+```
+
+Example local dry run:
+
+```bash
+python scripts/dispatch_scene_ops.py \
+  --snapshot output/scene_03.scene-ops.json \
+  --dry-run
+```
+
+Example GitHub Actions step:
+
+```yaml
+- name: Dispatch SceneOps snapshot
+  env:
+    ROMEOFLEXVISION_DISPATCH_TOKEN: ${{ secrets.ROMEOFLEXVISION_DISPATCH_TOKEN }}
+  run: |
+    python scripts/dispatch_scene_ops.py \
+      --snapshot output/scene_03.scene-ops.json
+```
+
+Reusable workflow in this repository:
+
+```yaml
+jobs:
+  publish-scene-ops:
+    uses: ./.github/workflows/publish-scene-ops.yml
+    secrets:
+      romeoflexvision_dispatch_token: ${{ secrets.ROMEOFLEXVISION_DISPATCH_TOKEN }}
+    with:
+      snapshot_path: output/scene_03.scene-ops.json
+```
+
+If the snapshot is already published elsewhere, the same helper can dispatch a
+public URL instead:
+
+```bash
+python scripts/dispatch_scene_ops.py \
+  --source-url https://example.com/scene-ops.json \
+  --dry-run
+```
+
 ## License
 
 MIT

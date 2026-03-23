@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://romeoflexvision.com/schemas/pinnocat-timeline-v1.schema.json",
+  "title": "Pinnocat Timeline v1",
+  "type": "object",
+  "required": [
+    "project_id",
+    "scene_id",
+    "timeline_version",
+    "target_duration_sec",
+    "editing_template",
+    "tracks",
+    "export_profile"
+  ],
+  "properties": {
+    "project_id": {
+      "type": "string"
+    },
+    "scene_id": {
+      "type": "string"
+    },
+    "timeline_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scene_goal": {
+      "type": "string"
+    },
+    "style_profile": {
+      "type": "string"
+    },
+    "editing_mode": {
+      "type": "string",
+      "enum": ["manual", "hybrid", "auto"]
+    },
+    "editing_template": {
+      "type": "string",
+      "enum": ["dialogue_scene", "cinematic_montage", "trailer_cut"]
+    },
+    "target_duration_sec": {
+      "type": "number",
+      "minimum": 1
+    },
+    "actual_duration_sec": {
+      "type": "number",
+      "minimum": 0
+    },
+    "tracks": {
+      "type": "object",
+      "required": ["video"],
+      "properties": {
+        "video": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/videoSegment"
+          }
+        },
+        "audio": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/audioSegment"
+          }
+        },
+        "subtitles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/subtitleSegment"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "used_clips": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rejected_clips": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reviews": {
+      "type": "object",
+      "properties": {
+        "romeo": {
+          "type": "string"
+        },
+        "andrew": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "export_profile": {
+      "type": "object",
+      "required": ["resolution", "fps", "format"],
+      "properties": {
+        "resolution": {
+          "type": "string"
+        },
+        "fps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "format": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "videoSegment": {
+      "type": "object",
+      "required": [
+        "segment_id",
+        "clip_id",
+        "source_in_sec",
+        "source_out_sec",
+        "timeline_in_sec",
+        "timeline_out_sec"
+      ],
+      "properties": {
+        "segment_id": {
+          "type": "string"
+        },
+        "clip_id": {
+          "type": "string"
+        },
+        "source_in_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "source_out_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "timeline_in_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "timeline_out_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "transition_in": {
+          "$ref": "#/$defs/transition"
+        },
+        "transition_out": {
+          "$ref": "#/$defs/transition"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": ["type", "duration_sec"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["cut", "crossfade", "dip_to_black", "match_cut"]
+        },
+        "duration_sec": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "audioSegment": {
+      "type": "object",
+      "required": ["track_id", "role", "timeline_in_sec"],
+      "properties": {
+        "track_id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["music", "voiceover", "sfx"]
+        },
+        "timeline_in_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "timeline_out_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gain_db": {
+          "type": "number"
+        },
+        "duck_music": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "subtitleSegment": {
+      "type": "object",
+      "required": ["text", "start_sec", "end_sec"],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "start_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "style_preset": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

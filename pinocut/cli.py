@@ -8,6 +8,8 @@ from pathlib import Path
 
 from pinocut.config import ColorGradeStyle, ProjectConfig, RenderPreset
 
+SCENE_SUBCOMMANDS = {"build"}
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -50,7 +52,91 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_scene_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="pinocut scene",
+        description="Pinnocat Scene Stitcher Agent v1",
+    )
+    subparsers = parser.add_subparsers(dest="scene_command", required=True)
+
+    build = subparsers.add_parser("build", help="Build one scene from source clips")
+    build.add_argument("input_folder", type=Path, help="Folder with source video clips")
+    build.add_argument("--output-dir", type=Path, default=Path("./output"), help="Output directory for scene artifacts")
+    build.add_argument("--project-id", type=str, default="rfv_pinnocat_001")
+    build.add_argument("--scene-id", type=str, default="scene_01")
+    build.add_argument("--goal", type=str, required=True, help="Scene goal")
+    build.add_argument("--style", type=str, default="cinematic")
+    build.add_argument("--duration", type=float, default=30.0, help="Target scene duration in seconds")
+    build.add_argument("--mode", choices=["manual", "hybrid", "auto"], default="hybrid")
+    build.add_argument(
+        "--template",
+        choices=["dialogue_scene", "cinematic_montage", "trailer_cut"],
+        default="cinematic_montage",
+    )
+    build.add_argument("--music", type=Path, default=None)
+    build.add_argument("--voiceover", type=Path, default=None)
+    build.add_argument("--subtitle-language", type=str, default=None)
+    build.add_argument("--max-clips", type=int, default=10)
+    build.add_argument("--min-duration", type=float, default=1.0)
+    build.add_argument("--max-duration", type=float, default=None)
+    build.add_argument("--resolution", type=str, default="1920x1080")
+    build.add_argument("--fps", type=int, default=24)
+
+    return parser.parse_args(argv)
+
+
+def main_scene(argv: list[str] | None = None) -> int:
+    args = parse_scene_args(argv)
+
+    from pinocut.scene_stitcher import SceneBuildRequest, SceneStitcherAgent
+    from pinocut.state import ExportProfile
+
+    request = SceneBuildRequest(
+        input_folder=args.input_folder,
+        output_dir=args.output_dir,
+        project_id=args.project_id,
+        scene_id=args.scene_id,
+        scene_goal=args.goal,
+        style_profile=args.style,
+        target_duration_sec=args.duration,
+        editing_mode=args.mode,
+        editing_template=args.template,
+        max_clips=args.max_clips,
+        min_duration=args.min_duration,
+        max_duration=args.max_duration,
+        music_path=args.music,
+        voiceover_path=args.voiceover,
+        subtitle_language=args.subtitle_language,
+        export_profile=ExportProfile(
+            resolution=args.resolution,
+            fps=args.fps,
+            format="mp4",
+        ),
+    )
+
+    agent = SceneStitcherAgent()
+    scene_state = agent.build_from_request(request)
+
+    if scene_state.errors:
+        for error in scene_state.errors:
+            print(str(error), file=sys.stderr)
+        if any(error.severity.value == "fatal" for error in scene_state.errors):
+            return 1
+
+    print(f"Scene: {scene_state.scene_id}")
+    print(f"Approved clips: {', '.join(scene_state.approved_clips) or 'none'}")
+    print(f"Rejected clips: {', '.join(scene_state.rejected_clips) or 'none'}")
+    if scene_state.timeline:
+        print(f"Timeline exported to: {scene_state.reviews.get('timeline_path', 'n/a')}")
+        print(f"Preview manifest: {scene_state.reviews.get('preview_path', 'n/a')}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = list(argv) if argv is not None else sys.argv[1:]
+    if len(argv) >= 2 and argv[0] == "scene" and argv[1] in SCENE_SUBCOMMANDS:
+        return main_scene(argv[1:])
+
     args = parse_args(argv)
 
     from pinocut.agent import PinoCutAgent
