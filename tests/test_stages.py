@@ -27,11 +27,14 @@ from pinocut.stages.render import RenderStage
 from pinocut.stages.titles import TitleStage
 from pinocut.stages.transitions import TransitionStage
 from pinocut.state import (
+    AudioMixConfig,
+    AudioTrack,
     ClipAnalysis,
     ClipSegment,
     EditDecision,
     PinoCutState,
     RomeoVisionData,
+    TitleOverlay,
     TransitionType,
 )
 from pinocut.utils.errors import ErrorSeverity
@@ -396,6 +399,111 @@ class TestKenBurnsWiring:
 
     def test_write_cube_lut_none_returns_false(self, tmp_path):
         assert not write_cube_lut(ColorGradeStyle.NONE, tmp_path / "none.cube")
+
+
+# ── RenderStage FFmpeg drawtext + ducking ──
+
+class TestRenderStageFFmpegExtras:
+    def _make_cfg(self, tmp_path):
+        return ProjectConfig(input_folder=tmp_path / "footage", output_path=tmp_path / "out.mp4")
+
+    def _mock_ffmpeg(self, captured: list):
+        def _fn(args):
+            captured.append(list(args))
+            dest = Path(args[-1])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+            return 0
+        return _fn
+
+    def test_drawtext_included_when_title_present(self, tmp_path, monkeypatch):
+        cfg = self._make_cfg(tmp_path)
+        clip = ClipSegment(path=tmp_path / "c.mp4", duration=8.0, has_audio=False,
+                           resolution=(1920, 1080), fps=30.0)
+        title = TitleOverlay(clip_path=str(clip.path), text="Hello World",
+                             start_time=0.0, duration=4.0)
+        stage = RenderStage(render_mode="ffmpeg")
+        captured: list = []
+        monkeypatch.setattr(stage, "_run_ffmpeg", self._mock_ffmpeg(captured))
+        state = make_state(cfg, clips=[clip], title_overlays=[title])
+        stage(state)
+        norm_args = captured[0]
+        assert "-vf" in norm_args
+        vf = norm_args[norm_args.index("-vf") + 1]
+        assert "drawtext" in vf
+        assert "Hello World" in vf
+
+    def test_drawtext_not_included_without_title(self, tmp_path, monkeypatch):
+        cfg = self._make_cfg(tmp_path)
+        clip = ClipSegment(path=tmp_path / "c.mp4", duration=8.0, has_audio=False,
+                           resolution=(1920, 1080), fps=30.0)
+        stage = RenderStage(render_mode="ffmpeg")
+        captured: list = []
+        monkeypatch.setattr(stage, "_run_ffmpeg", self._mock_ffmpeg(captured))
+        stage(make_state(cfg, clips=[clip]))
+        assert "-vf" not in captured[0]
+
+    def test_lut_and_drawtext_combined_in_single_vf(self, tmp_path, monkeypatch):
+        cfg = self._make_cfg(tmp_path)
+        clip = ClipSegment(path=tmp_path / "c.mp4", duration=8.0, has_audio=False,
+                           resolution=(1920, 1080), fps=30.0)
+        title = TitleOverlay(clip_path=str(clip.path), text="Test", start_time=0.0, duration=4.0)
+        stage = RenderStage(render_mode="ffmpeg")
+        captured: list = []
+        monkeypatch.setattr(stage, "_run_ffmpeg", self._mock_ffmpeg(captured))
+        state = make_state(cfg, clips=[clip], title_overlays=[title],
+                           color_grade=ColorGradeStyle.WARM)
+        stage(state)
+        vf = captured[0][captured[0].index("-vf") + 1]
+        assert "lut3d=" in vf and "drawtext=" in vf
+
+    def test_volume_ducking_in_filter_complex(self, tmp_path, monkeypatch):
+        cfg = self._make_cfg(tmp_path)
+        music = tmp_path / "music.mp3"
+        music.touch()
+        clip = ClipSegment(path=tmp_path / "c.mp4", duration=8.0, has_audio=True,
+                           resolution=(1920, 1080), fps=30.0)
+        ducking_regions = [
+            {"type": "ramp_down", "start": 0.8, "end": 1.0, "volume_from": 0.32, "volume_to": 0.12},
+            {"type": "hold",      "start": 1.0, "end": 3.0, "volume_from": 0.12, "volume_to": 0.12},
+            {"type": "ramp_up",   "start": 3.0, "end": 3.2, "volume_from": 0.12, "volume_to": 0.32},
+        ]
+        audio_mix = AudioMixConfig(
+            tracks=[AudioTrack(path=str(music), role="music", volume=0.32, loop=True)],
+            ducking_regions=ducking_regions,
+        )
+        stage = RenderStage(render_mode="ffmpeg")
+        captured: list = []
+        monkeypatch.setattr(stage, "_run_ffmpeg", self._mock_ffmpeg(captured))
+        state = make_state(cfg, clips=[clip], audio_mix=audio_mix)
+        stage(state)
+        # The concat call (second invocation) should have filter_complex with volume
+        concat_args = captured[1] if len(captured) > 1 else captured[0]
+        fc_idx = concat_args.index("-filter_complex") if "-filter_complex" in concat_args else -1
+        assert fc_idx >= 0
+        fc = concat_args[fc_idx + 1]
+        assert "volume=" in fc and "between" in fc
+
+    def test_volume_expr_ramp_down(self):
+        stage = RenderStage(render_mode="ffmpeg")
+        regions = [{"type": "ramp_down", "start": 1.0, "end": 2.0,
+                    "volume_from": 0.3, "volume_to": 0.1}]
+        expr = stage._build_volume_expr(regions, 0.3)
+        assert "between" in expr and "0.3000" in expr and "0.1000" in expr
+
+    def test_volume_expr_hold(self):
+        stage = RenderStage(render_mode="ffmpeg")
+        regions = [{"type": "hold", "start": 2.0, "end": 4.0,
+                    "volume_from": 0.12, "volume_to": 0.12}]
+        expr = stage._build_volume_expr(regions, 0.3)
+        assert "0.1200" in expr and "between" in expr
+
+    def test_drawtext_filter_escapes_colon(self):
+        stage = RenderStage(render_mode="ffmpeg")
+        cfg = ProjectConfig(input_folder=Path("."))
+        title = TitleOverlay(clip_path="x", text="Hello: World", start_time=0.0, duration=4.0)
+        f = stage._build_drawtext_filter(title, cfg)
+        assert "Hello\\: World" in f
 
 
 # ── Utils ──

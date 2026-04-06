@@ -19,7 +19,7 @@ from pinocut.config import RENDER_PRESETS, ColorGradeStyle, RenderPreset
 from pinocut.effects import LowerThirdStyle, ken_burns_frame, make_color_grade_filter, render_lower_third, write_cube_lut
 from pinocut.integrations.e2b_sandbox import SandboxConfig, SandboxExecutor
 from pinocut.stages.base import BaseStage
-from pinocut.state import PinoCutState, TransitionType
+from pinocut.state import PinoCutState, TitleOverlay, TransitionType
 from pinocut.utils.errors import ErrorSeverity, StageError
 
 
@@ -178,6 +178,7 @@ class RenderStage(BaseStage):
         edit_decisions = state.get("edit_decisions", [])
         audio_mix = state.get("audio_mix")
         color_grade = state.get("color_grade", ColorGradeStyle.NONE)
+        title_overlays = state.get("title_overlays", [])
         config = state["project_config"]
         errors: list[StageError] = list(state.get("errors", []))
 
@@ -190,6 +191,7 @@ class RenderStage(BaseStage):
         preset = RENDER_PRESETS.get(config.render_preset, RENDER_PRESETS[RenderPreset.STANDARD])
         output_path = Path(config.output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        titles_by_path = {t.clip_path: t for t in title_overlays}
 
         with tempfile.TemporaryDirectory(prefix="pinocut_ffmpeg_") as tmpdir:
             tmp = Path(tmpdir)
@@ -205,9 +207,15 @@ class RenderStage(BaseStage):
             normalized: list[Path] = []
             for i, clip in enumerate(clips_data):
                 norm_path = tmp / f"norm_{i:04d}.mp4"
-                args = ["-i", str(clip.path)]
+                vf_parts: list[str] = []
                 if lut_path:
-                    args += ["-vf", f"lut3d={lut_path}"]
+                    vf_parts.append(f"lut3d={lut_path}")
+                title = titles_by_path.get(str(clip.path))
+                if title:
+                    vf_parts.append(self._build_drawtext_filter(title, config))
+                args = ["-i", str(clip.path)]
+                if vf_parts:
+                    args += ["-vf", ",".join(vf_parts)]
                 args += [
                     "-c:v", preset.codec,
                     "-preset", "ultrafast",  # fast for intermediates
@@ -250,12 +258,22 @@ class RenderStage(BaseStage):
             if audio_mix and audio_mix.tracks:
                 music_track = next((t for t in audio_mix.tracks if t.role == "music"), None)
                 if music_track:
+                    if audio_mix.ducking_regions:
+                        vol_expr = self._build_volume_expr(audio_mix.ducking_regions, music_track.volume)
+                        filter_complex = (
+                            f"[1:a]volume='{vol_expr}'[music],"
+                            f"[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                        )
+                    else:
+                        filter_complex = (
+                            f"[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2,"
+                            f"volume={music_track.volume}[aout]"
+                        )
                     args = [
                         "-f", "concat", "-safe", "0", "-i", str(concat_file),
                         "-stream_loop", "-1", "-i", music_track.path,
                         "-c:v", preset.codec, "-preset", preset.preset, "-crf", str(preset.crf),
-                        "-filter_complex",
-                        f"[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2,volume={music_track.volume}[aout]",
+                        "-filter_complex", filter_complex,
                         "-map", "0:v", "-map", "[aout]",
                         "-c:a", preset.audio_codec, "-b:a", preset.audio_bitrate,
                         "-threads", str(preset.threads),
@@ -278,6 +296,44 @@ class RenderStage(BaseStage):
 
         state["errors"] = errors
         return state
+
+    def _build_drawtext_filter(self, title: TitleOverlay, config) -> str:
+        """Build an FFmpeg drawtext filter string for a title overlay.
+
+        Produces simple (non-animated) text matching the title config.
+        Text and colons are escaped per FFmpeg filter syntax rules.
+        """
+        text = title.text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
+        end = title.start_time + title.duration
+        return (
+            f"drawtext=text='{text}'"
+            f":fontsize={config.title.font_size}"
+            f":fontcolor={config.title.color}"
+            f":box=1:boxcolor=black@0.5:boxborderw=5"
+            f":x=(w-text_w)/2"
+            f":y=h-{config.title.margin_bottom}-text_h"
+            f":enable='between(t,{title.start_time:.3f},{end:.3f})'"
+        )
+
+    def _build_volume_expr(self, ducking_regions: list[dict], base_vol: float) -> str:
+        """Build an FFmpeg volume filter expression from ducking regions.
+
+        Constructs a nested if/between expression that reproduces the per-region
+        volume curve (hold, ramp_down, ramp_up) as a piecewise linear function.
+        """
+        expr = f"{base_vol:.4f}"
+        for r in reversed(ducking_regions):
+            if r["type"] == "hold":
+                vol_expr = f"{r['volume_from']:.4f}"
+            else:  # ramp_down or ramp_up — linear interpolation
+                dur = max(r["end"] - r["start"], 0.001)
+                vol_expr = (
+                    f"({r['volume_from']:.4f}"
+                    f"+({r['volume_to']:.4f}-{r['volume_from']:.4f})"
+                    f"*(t-{r['start']:.4f})/{dur:.4f})"
+                )
+            expr = f"if(between(t,{r['start']:.4f},{r['end']:.4f}),{vol_expr},{expr})"
+        return expr
 
     def _run_ffmpeg(self, args: list[str]) -> int:
         """Run FFmpeg command, optionally via E2B sandbox."""

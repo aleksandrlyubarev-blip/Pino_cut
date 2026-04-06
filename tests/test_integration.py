@@ -281,3 +281,56 @@ class TestPinoCutAgentE2E:
         }
         assert route_after_analyze(state) == "abort"
 
+    def test_swarm_registry_update_status_called_after_run(self, tmp_path):
+        """SwarmRegistry.update_status is called in _cleanup after a pipeline run."""
+        folder = tmp_path / "footage"
+        folder.mkdir()
+        registry = SwarmRegistry()
+        registry.register()  # local mode — sets is_registered=True
+
+        called_with: list[dict] = []
+        original = registry.update_status
+        registry.update_status = lambda m: called_with.append(m)  # type: ignore[method-assign]
+
+        agent = PinoCutAgent(swarm_registry=registry)
+        agent.run(self._base_config(folder))
+
+        assert len(called_with) == 1
+        assert "run_id" in called_with[0]
+
+    def test_swarm_deregister_called_in_cleanup(self, tmp_path):
+        """SwarmRegistry.shutdown (→ deregister) is called during agent cleanup."""
+        folder = tmp_path / "footage"
+        folder.mkdir()
+        registry = SwarmRegistry()
+        registry.register()
+
+        shutdown_calls: list[int] = []
+        registry.shutdown = lambda: shutdown_calls.append(1)  # type: ignore[method-assign]
+        registry.update_status = lambda m: None  # type: ignore[method-assign]
+
+        agent = PinoCutAgent(swarm_registry=registry)
+        agent.run(self._base_config(folder))
+        assert len(shutdown_calls) == 1
+
+
+# ── CLI ──
+
+class TestCLI:
+    def test_parallel_on_by_default(self):
+        from pinocut.cli import parse_args
+        args = parse_args(["./footage"])
+        assert not args.no_parallel
+
+    def test_no_parallel_flag_disables_parallel(self):
+        from pinocut.cli import parse_args
+        args = parse_args(["./footage", "--no-parallel"])
+        assert args.no_parallel
+
+    def test_parallel_flag_removed(self):
+        """The old --parallel flag should no longer exist."""
+        from pinocut.cli import parse_args
+        import argparse
+        with pytest.raises(SystemExit):
+            parse_args(["./footage", "--parallel"])
+

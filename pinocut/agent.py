@@ -19,6 +19,7 @@ from pinocut.integrations.e2b_sandbox import SandboxConfig, SandboxExecutor
 from pinocut.integrations.moltis_bridge import MoltisBridge, MoltisConfig
 from pinocut.integrations.romeo_phd import MetricsCollector
 from pinocut.integrations.romeo_vision import RomeoVisionClient, RomeoVisionConfig
+from pinocut.integrations.swarm_registry import SwarmRegistry
 from pinocut.stages import (
     AnalyzeStage,
     AudioMixStage,
@@ -112,12 +113,13 @@ class PinoCutAgent:
         print(agent.metrics_report())
     """
 
-    def __init__(self, *, structured_logs: bool = False):
+    def __init__(self, *, structured_logs: bool = False, swarm_registry: SwarmRegistry | None = None):
         self.structured_logs = structured_logs
         self._moltis: MoltisBridge | None = None
         self._vision: RomeoVisionClient | None = None
         self._sandbox: SandboxExecutor | None = None
         self._metrics = MetricsCollector()
+        self._swarm_registry = swarm_registry
         self._graph = None  # lazy build
 
     def run(self, config: ProjectConfig) -> PinoCutState:
@@ -219,6 +221,9 @@ class PinoCutAgent:
             self._sandbox = SandboxExecutor(SandboxConfig(mode="e2b"))
 
     def _cleanup(self) -> None:
-        """Flush caches and shutdown."""
+        """Flush caches, report metrics to Swarm, and shutdown."""
         if self._moltis:
             self._moltis.shutdown()
+        if self._swarm_registry and self._swarm_registry.is_registered:
+            self._swarm_registry.update_status(self._metrics.report())
+            self._swarm_registry.shutdown()

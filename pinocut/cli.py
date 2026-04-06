@@ -32,8 +32,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--watermark", type=str, default="Romeo Flex Vision", help="Watermark text")
 
     # Execution
-    parser.add_argument("--parallel", action="store_true", default=True, help="Parallel analysis via Moltis (default: on)")
-    parser.add_argument("--no-parallel", action="store_true", help="Disable parallel analysis")
+    parser.add_argument("--no-parallel", action="store_true", help="Disable parallel analysis (default: parallel on)")
     parser.add_argument("--sandbox", choices=["local", "e2b"], default="local", help="Execution sandbox")
     parser.add_argument("--memory-persist", action="store_true", help="Persist analysis cache between runs")
 
@@ -67,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         color_grade=ColorGradeStyle(args.color_grade),
         watermark=WatermarkConfig(text=args.watermark),
         structured_logs=args.structured_logs,
-        parallel=args.parallel and not args.no_parallel,
+        parallel=not args.no_parallel,
         sandbox=args.sandbox,
         memory_persist=args.memory_persist,
         metrics_enabled=args.metrics,
@@ -75,12 +74,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # Optional: register in Andrew Swarm
+    swarm_registry = None
     if args.register_swarm:
         from pinocut.integrations import AgentCard, SwarmRegistry
-        registry = SwarmRegistry()
-        registry.register(AgentCard())
+        swarm_registry = SwarmRegistry()
+        swarm_registry.register(AgentCard())
 
-    agent = PinoCutAgent(structured_logs=args.structured_logs)
+    agent = PinoCutAgent(structured_logs=args.structured_logs, swarm_registry=swarm_registry)
     result = agent.run(config)
 
     # Print metrics
