@@ -129,6 +129,8 @@ def main_scene(argv: list[str] | None = None) -> int:
     if scene_state.timeline:
         print(f"Timeline exported to: {scene_state.reviews.get('timeline_path', 'n/a')}")
         print(f"Preview manifest: {scene_state.reviews.get('preview_path', 'n/a')}")
+        print(f"Scene video: {scene_state.reviews.get('video_path', 'not rendered')}")
+        print(f"Preview video: {scene_state.reviews.get('preview_video_path', 'not rendered')}")
     return 0
 
 

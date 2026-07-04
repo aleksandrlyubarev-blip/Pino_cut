@@ -441,6 +441,26 @@ class SceneStitcherAgent:
         scene_state.reviews["preview_path"] = str(preview_path)
         scene_state.reviews["timeline_path"] = str(timeline_path)
         scene_state.reviews["scene_ops_path"] = str(scene_ops_path)
+        self._render_media(scene_state)
+
+    def _render_media(self, scene_state: SceneState) -> None:
+        video_path = self.tools.render_scene_media(scene_state)
+        if video_path is None:
+            scene_state.errors.append(
+                StageError(
+                    stage="scene_stitcher",
+                    message=(
+                        "Scene video render skipped (ffmpeg or source clips unavailable); "
+                        "timeline JSON exported without media"
+                    ),
+                    severity=ErrorSeverity.WARN,
+                )
+            )
+            return
+        scene_state.reviews["video_path"] = str(video_path)
+        preview_video = self.tools.render_scene_media(scene_state, preview=True)
+        if preview_video is not None:
+            scene_state.reviews["preview_video_path"] = str(preview_video)
 
     def _discover_clip_paths(self, input_folder: Path, max_clips: int) -> list[Path]:
         if not input_folder.exists():

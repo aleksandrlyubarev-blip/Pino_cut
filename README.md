@@ -167,12 +167,16 @@ pinocut scene build ./raw_footage \
   --output-dir ./output
 ```
 
-Current v1 code path exports scene artifacts as timeline and preview JSON manifests. It does not yet replace the full media render pipeline.
-It now also exports a frontend-ready SceneOps snapshot at:
+The scene build path renders real media via FFmpeg alongside the JSON artifacts:
 
 ```text
-output/<scene_id>.scene-ops.json
+output/<scene_id>.mp4              # final scene render (trim + transitions + audio mix)
+output/<scene_id>.preview.mp4      # fast low-res proxy for review
+output/<scene_id>.timeline.json    # timeline manifest
+output/<scene_id>.scene-ops.json   # frontend-ready SceneOps snapshot
 ```
+
+Transitions from the timeline (hard cuts, crossfade, dip-to-black) are applied with FFmpeg `concat`/`xfade`, music and voiceover tracks are mixed with gain and ducking, and clips are conformed to the export profile (resolution, fps). When FFmpeg or source media is unavailable, the build degrades gracefully to JSON-only export with a warning.
 
 ### Dispatch SceneOps snapshots to RomeoFlexVision
 
