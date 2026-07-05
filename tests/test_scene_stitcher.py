@@ -177,12 +177,17 @@ def test_scene_generates_andrew_reports_and_bassito_jobs(tmp_path: Path) -> None
 
     result = SceneStitcherAgent().build_scene(scene)
     clip_map = {clip.path.stem: clip for clip in result.available_clips}
-    job_types = {job["job_type"] for job in result.regeneration_jobs}
+    job_types = {job.job_type for job in result.regeneration_jobs}
 
     assert result.bridge_jobs
-    assert result.bridge_jobs[0]["job_type"] == "bridge_shot"
+    assert result.bridge_jobs[0].job_type == "bridge_shot"
+    assert result.bridge_jobs[0].job_id.startswith("scene_05_bridge_shot")
+    assert result.bridge_jobs[0].params["anchor_clip_id"]
     assert "extend" in job_types
     assert "restyle" in job_types
+    extend_jobs = [job for job in result.regeneration_jobs if job.job_type == "extend"]
+    assert extend_jobs[0].params["target_duration_sec"] > 0
+    assert extend_jobs[0].replaces_clip_id == extend_jobs[0].source_clip_id
     assert result.reviews["andrew:bridge_a"].startswith("Clip bridge_a:")
     assert clip_map["bridge_a"].metadata["bassito_prepared"] is True
     assert "reframing" in clip_map["bridge_a"].metadata

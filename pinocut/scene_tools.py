@@ -10,6 +10,7 @@ from pathlib import Path
 from pinocut.config import ProjectConfig
 from pinocut.render_service import SceneRenderService
 from pinocut.state import (
+    BassitoJob,
     ClipSegment,
     ExportProfile,
     SceneState,
@@ -220,14 +221,41 @@ class SceneToolbox:
             preview=preview,
         )
 
-    def request_extend(self, clip_id: str, prompt: str) -> dict:
-        return {"clip_id": clip_id, "prompt": prompt, "status": "queued", "job_type": "extend"}
+    def request_extend(
+        self, clip_id: str, prompt: str, *, params: dict | None = None
+    ) -> BassitoJob:
+        return BassitoJob(
+            job_id="",
+            job_type="extend",
+            prompt=prompt,
+            source_clip_id=clip_id,
+            replaces_clip_id=clip_id,
+            params=params or {},
+        )
 
-    def request_restyle(self, clip_id: str, prompt: str) -> dict:
-        return {"clip_id": clip_id, "prompt": prompt, "status": "queued", "job_type": "restyle"}
+    def request_restyle(
+        self, clip_id: str, prompt: str, *, params: dict | None = None
+    ) -> BassitoJob:
+        return BassitoJob(
+            job_id="",
+            job_type="restyle",
+            prompt=prompt,
+            source_clip_id=clip_id,
+            replaces_clip_id=clip_id,
+            params=params or {},
+        )
 
-    def request_bridge_shot(self, prompt: str) -> dict:
-        return {"prompt": prompt, "status": "queued", "job_type": "bridge_shot"}
+    def request_bridge_shot(self, prompt: str, *, params: dict | None = None) -> BassitoJob:
+        return BassitoJob(
+            job_id="",
+            job_type="bridge_shot",
+            prompt=prompt,
+            params=params or {},
+        )
+
+    def probe_media(self, filepath: Path, *, min_duration: float = 0.1) -> ClipSegment | None:
+        """Probe an arbitrary media file (e.g. a Bassito artifact) into a ClipSegment."""
+        return self._probe_clip(filepath, ProjectConfig(min_duration=min_duration))
 
     def _probe_clip(self, filepath: Path, config: ProjectConfig) -> ClipSegment | None:
         probed = self._probe_with_moviepy(filepath)

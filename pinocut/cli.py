@@ -81,6 +81,11 @@ def parse_scene_args(argv: list[str] | None = None) -> argparse.Namespace:
     build.add_argument("--max-duration", type=float, default=None)
     build.add_argument("--resolution", type=str, default="1920x1080")
     build.add_argument("--fps", type=int, default=24)
+    build.add_argument(
+        "--run-bassito",
+        action="store_true",
+        help="Execute queued Bassito jobs (extend/restyle/bridge) and rebuild the scene",
+    )
 
     return parser.parse_args(argv)
 
@@ -117,6 +122,10 @@ def main_scene(argv: list[str] | None = None) -> int:
     agent = SceneStitcherAgent()
     scene_state = agent.build_from_request(request)
 
+    queued_jobs = list(scene_state.bridge_jobs) + list(scene_state.regeneration_jobs)
+    if queued_jobs and args.run_bassito:
+        scene_state = agent.run_bassito_round(scene_state)
+
     if scene_state.errors:
         for error in scene_state.errors:
             print(str(error), file=sys.stderr)
@@ -131,6 +140,22 @@ def main_scene(argv: list[str] | None = None) -> int:
         print(f"Preview manifest: {scene_state.reviews.get('preview_path', 'n/a')}")
         print(f"Scene video: {scene_state.reviews.get('video_path', 'not rendered')}")
         print(f"Preview video: {scene_state.reviews.get('preview_video_path', 'not rendered')}")
+        print(f"Timeline version: v{scene_state.timeline_version}")
+
+    executed = scene_state.bassito_history
+    if executed:
+        print("Bassito jobs:")
+        for job in executed:
+            artifact = f" -> {job.artifact_path}" if job.artifact_path else ""
+            failure = f" ({job.error})" if job.error else ""
+            print(f"  {job.job_id} [{job.job_type}] {job.status}{artifact}{failure}")
+    else:
+        pending = list(scene_state.bridge_jobs) + list(scene_state.regeneration_jobs)
+        if pending:
+            print(
+                f"Bassito jobs queued: {len(pending)} "
+                "(re-run with --run-bassito to execute and rebuild)"
+            )
     return 0
 
 

@@ -211,6 +211,37 @@ class RomeoReview:
         )
 
 
+class BassitoJobStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+@dataclass(slots=True)
+class BassitoJob:
+    """A proposed visual-generation job executed by a GenerativeBackend.
+
+    Bassito jobs never mutate the timeline directly: a finished job yields a
+    clip artifact that re-enters the clip pool (replacing its source when
+    ``replaces_clip_id`` is set) and the scene is rebuilt from there.
+    """
+
+    job_id: str
+    job_type: str  # extend | restyle | bridge_shot
+    prompt: str
+    source_clip_id: str | None = None
+    replaces_clip_id: str | None = None
+    params: dict[str, Any] = field(default_factory=dict)
+    status: str = BassitoJobStatus.QUEUED.value
+    backend: str | None = None
+    artifact_path: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
 @dataclass(slots=True)
 class TransitionSpec:
     type: str = "cut"
@@ -311,8 +342,9 @@ class SceneState:
     export_profile: ExportProfile = field(default_factory=ExportProfile)
     output_dir: str = "./output"
     timeline: TimelineV1 | None = None
-    bridge_jobs: list[dict[str, Any]] = field(default_factory=list)
-    regeneration_jobs: list[dict[str, Any]] = field(default_factory=list)
+    bridge_jobs: list[BassitoJob] = field(default_factory=list)
+    regeneration_jobs: list[BassitoJob] = field(default_factory=list)
+    bassito_history: list[BassitoJob] = field(default_factory=list)
     reviews: dict[str, str] = field(default_factory=dict)
     version_history: list[str] = field(default_factory=list)
     errors: list[StageError] = field(default_factory=list)
@@ -338,8 +370,9 @@ class SceneState:
             "export_profile": _dataclass_to_dict(self.export_profile),
             "output_dir": self.output_dir,
             "timeline": self.timeline.to_dict() if self.timeline else None,
-            "bridge_jobs": self.bridge_jobs,
-            "regeneration_jobs": self.regeneration_jobs,
+            "bridge_jobs": _dataclass_to_dict(self.bridge_jobs),
+            "regeneration_jobs": _dataclass_to_dict(self.regeneration_jobs),
+            "bassito_history": _dataclass_to_dict(self.bassito_history),
             "reviews": self.reviews,
             "version_history": self.version_history,
             "errors": [str(error) for error in self.errors],
