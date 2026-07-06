@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 from pinocut.config import ProjectConfig
+from pinocut.render_service import SceneRenderService
 from pinocut.state import (
+    BassitoJob,
     ClipSegment,
     ExportProfile,
     SceneState,
@@ -24,6 +28,7 @@ class SceneToolbox:
 
     def __init__(self, *, structured_logs: bool = False):
         self.log = StageLogger("scene_tools", structured=structured_logs)
+        self.renderer = SceneRenderService(structured_logs=structured_logs)
 
     def import_clips(self, paths: list[Path], config: ProjectConfig) -> list[ClipSegment]:
         clips: list[ClipSegment] = []
@@ -202,32 +207,130 @@ class SceneToolbox:
         version_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return version_path
 
-    def request_extend(self, clip_id: str, prompt: str) -> dict:
-        return {"clip_id": clip_id, "prompt": prompt, "status": "queued", "job_type": "extend"}
+    def render_scene_media(self, scene_state: SceneState, *, preview: bool = False) -> Path | None:
+        """Render the scene timeline to an mp4; None when render is unavailable."""
+        if scene_state.timeline is None:
+            return None
+        clip_paths = {clip.path.stem: clip.path for clip in scene_state.available_clips}
+        suffix = ".preview.mp4" if preview else f".{scene_state.export_profile.format}"
+        output_path = Path(scene_state.output_dir) / f"{scene_state.scene_id}{suffix}"
+        return self.renderer.render(
+            scene_state.timeline,
+            clip_paths,
+            output_path,
+            preview=preview,
+        )
 
-    def request_restyle(self, clip_id: str, prompt: str) -> dict:
-        return {"clip_id": clip_id, "prompt": prompt, "status": "queued", "job_type": "restyle"}
+    def request_extend(
+        self, clip_id: str, prompt: str, *, params: dict | None = None
+    ) -> BassitoJob:
+        return BassitoJob(
+            job_id="",
+            job_type="extend",
+            prompt=prompt,
+            source_clip_id=clip_id,
+            replaces_clip_id=clip_id,
+            params=params or {},
+        )
 
-    def request_bridge_shot(self, prompt: str) -> dict:
-        return {"prompt": prompt, "status": "queued", "job_type": "bridge_shot"}
+    def request_restyle(
+        self, clip_id: str, prompt: str, *, params: dict | None = None
+    ) -> BassitoJob:
+        return BassitoJob(
+            job_id="",
+            job_type="restyle",
+            prompt=prompt,
+            source_clip_id=clip_id,
+            replaces_clip_id=clip_id,
+            params=params or {},
+        )
+
+    def request_bridge_shot(self, prompt: str, *, params: dict | None = None) -> BassitoJob:
+        return BassitoJob(
+            job_id="",
+            job_type="bridge_shot",
+            prompt=prompt,
+            params=params or {},
+        )
+
+    def probe_media(self, filepath: Path, *, min_duration: float = 0.1) -> ClipSegment | None:
+        """Probe an arbitrary media file (e.g. a Bassito artifact) into a ClipSegment."""
+        return self._probe_clip(filepath, ProjectConfig(min_duration=min_duration))
 
     def _probe_clip(self, filepath: Path, config: ProjectConfig) -> ClipSegment | None:
+        probed = self._probe_with_moviepy(filepath)
+        if probed is None:
+            probed = self._probe_with_ffprobe(filepath)
+        if probed is None:
+            return None
+
+        duration, has_audio, resolution, fps = probed
+        if duration < config.min_duration:
+            return None
+        if config.max_duration and duration > config.max_duration:
+            duration = config.max_duration
+        return ClipSegment(
+            path=filepath,
+            duration=duration,
+            has_audio=has_audio,
+            resolution=resolution,
+            fps=fps,
+            metadata={},
+        )
+
+    def _probe_with_moviepy(
+        self, filepath: Path
+    ) -> tuple[float, bool, tuple[int, int], float] | None:
         try:
             from moviepy.editor import VideoFileClip
 
             with VideoFileClip(str(filepath)) as vclip:
-                duration = vclip.duration
-                if duration < config.min_duration:
-                    return None
-                if config.max_duration and duration > config.max_duration:
-                    duration = config.max_duration
-                return ClipSegment(
-                    path=filepath,
-                    duration=duration,
-                    has_audio=vclip.audio is not None,
-                    resolution=(vclip.w, vclip.h),
-                    fps=vclip.fps,
-                    metadata={},
+                return (
+                    float(vclip.duration),
+                    vclip.audio is not None,
+                    (vclip.w, vclip.h),
+                    float(vclip.fps),
                 )
+        except Exception:
+            return None
+
+    def _probe_with_ffprobe(
+        self, filepath: Path
+    ) -> tuple[float, bool, tuple[int, int], float] | None:
+        if shutil.which("ffprobe") is None:
+            return None
+        try:
+            proc = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-print_format", "json",
+                    "-show_format", "-show_streams",
+                    str(filepath),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if proc.returncode != 0:
+                return None
+            payload = json.loads(proc.stdout)
+            video = next(
+                (s for s in payload.get("streams", []) if s.get("codec_type") == "video"),
+                None,
+            )
+            if video is None:
+                return None
+            duration = float(payload.get("format", {}).get("duration", 0.0))
+            has_audio = any(
+                s.get("codec_type") == "audio" for s in payload.get("streams", [])
+            )
+            num, _, den = str(video.get("avg_frame_rate", "24/1")).partition("/")
+            fps = float(num) / float(den) if den and float(den) else 24.0
+            return (
+                duration,
+                has_audio,
+                (int(video.get("width", 0)), int(video.get("height", 0))),
+                fps,
+            )
         except Exception:
             return None

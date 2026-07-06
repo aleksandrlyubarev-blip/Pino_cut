@@ -9,9 +9,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from pinocut.bassito import BassitoContext, BassitoRunner
 from pinocut.config import ProjectConfig, SUPPORTED_VIDEO_EXTENSIONS
 from pinocut.scene_tools import SceneToolbox
 from pinocut.state import (
+    BassitoJob,
     ClipScore,
     ClipSegment,
     ExportProfile,
@@ -254,42 +256,65 @@ class SceneStitcherAgent:
 
             if scene_state.editing_mode == "manual":
                 continue
+            if clip.metadata.get("bassito_generated"):
+                # Already a Bassito artifact; do not regenerate its regeneration.
+                continue
 
             if clip.duration < max(2.0, target_per_clip) * 0.75:
-                scene_state.regeneration_jobs.append(
-                    self.extend_or_restyle_clip(
-                        clip,
-                        mode="extend",
-                        prompt=(
-                            f"Extend clip {clip.path.stem} to better support "
-                            f"{scene_state.scene_goal}."
-                        ),
-                    )
+                job = self.extend_or_restyle_clip(
+                    clip,
+                    mode="extend",
+                    prompt=(
+                        f"Extend clip {clip.path.stem} to better support "
+                        f"{scene_state.scene_goal}."
+                    ),
                 )
+                job.params.setdefault(
+                    "target_duration_sec", round(max(2.0, target_per_clip), 3)
+                )
+                scene_state.regeneration_jobs.append(job)
 
             flaws = self.detect_technical_flaws(clip)
             if "excessive_camera_shake" in flaws or "unstable_lighting" in flaws:
-                scene_state.regeneration_jobs.append(
-                    self.extend_or_restyle_clip(
-                        clip,
-                        mode="restyle",
-                        prompt=(
-                            f"Restyle clip {clip.path.stem} for {scene_state.style_profile} "
-                            f"while preserving scene goal: {scene_state.scene_goal}."
-                        ),
-                    )
+                job = self.extend_or_restyle_clip(
+                    clip,
+                    mode="restyle",
+                    prompt=(
+                        f"Restyle clip {clip.path.stem} for {scene_state.style_profile} "
+                        f"while preserving scene goal: {scene_state.scene_goal}."
+                    ),
                 )
+                job.params.setdefault("style_profile", scene_state.style_profile)
+                scene_state.regeneration_jobs.append(job)
 
+        has_bridge_artifact = any(
+            clip.metadata.get("bassito_job_type") == "bridge_shot"
+            for clip in scene_state.available_clips
+        )
         if (
             scene_state.editing_mode != "manual"
+            and not has_bridge_artifact
             and projected_duration < scene_state.target_duration_sec * 0.85
         ):
-            scene_state.bridge_jobs.append(
-                self.create_bridge_shot(
-                    f"{scene_state.scene_goal} | {scene_state.style_profile} | "
-                    f"{scene_state.editing_template}"
-                )
+            bridge_job = self.create_bridge_shot(
+                f"{scene_state.scene_goal} | {scene_state.style_profile} | "
+                f"{scene_state.editing_template}"
             )
+            bridge_job.params.setdefault(
+                "duration_sec",
+                round(
+                    min(8.0, max(2.0, scene_state.target_duration_sec - projected_duration)),
+                    3,
+                ),
+            )
+            bridge_job.params.setdefault("anchor_clip_id", selected_clips[-1].path.stem)
+            scene_state.bridge_jobs.append(bridge_job)
+
+        for index, job in enumerate(
+            scene_state.bridge_jobs + scene_state.regeneration_jobs, start=1
+        ):
+            if not job.job_id:
+                job.job_id = f"{scene_state.scene_id}_{job.job_type}_{index:02d}"
 
     def _assemble_timeline(self, scene_state: SceneState) -> None:
         clip_map = {clip.path.stem: clip for clip in scene_state.available_clips}
@@ -441,6 +466,26 @@ class SceneStitcherAgent:
         scene_state.reviews["preview_path"] = str(preview_path)
         scene_state.reviews["timeline_path"] = str(timeline_path)
         scene_state.reviews["scene_ops_path"] = str(scene_ops_path)
+        self._render_media(scene_state)
+
+    def _render_media(self, scene_state: SceneState) -> None:
+        video_path = self.tools.render_scene_media(scene_state)
+        if video_path is None:
+            scene_state.errors.append(
+                StageError(
+                    stage="scene_stitcher",
+                    message=(
+                        "Scene video render skipped (ffmpeg or source clips unavailable); "
+                        "timeline JSON exported without media"
+                    ),
+                    severity=ErrorSeverity.WARN,
+                )
+            )
+            return
+        scene_state.reviews["video_path"] = str(video_path)
+        preview_video = self.tools.render_scene_media(scene_state, preview=True)
+        if preview_video is not None:
+            scene_state.reviews["preview_video_path"] = str(preview_video)
 
     def _discover_clip_paths(self, input_folder: Path, max_clips: int) -> list[Path]:
         if not input_folder.exists():
@@ -631,7 +676,7 @@ class SceneStitcherAgent:
             "safe_crop": "rule_of_thirds",
         }
 
-    def create_bridge_shot(self, scene_context: str) -> dict:
+    def create_bridge_shot(self, scene_context: str) -> BassitoJob:
         """Queue a bridge-shot request through the bounded Bassito tool API."""
         return self.tools.request_bridge_shot(prompt=scene_context)
 
@@ -640,11 +685,105 @@ class SceneStitcherAgent:
         clip: ClipSegment,
         mode: Literal["extend", "restyle"],
         prompt: str,
-    ) -> dict:
+    ) -> BassitoJob:
         """Map directly to the async regeneration tools in SceneToolbox."""
         if mode == "extend":
             return self.tools.request_extend(clip.path.stem, prompt)
         return self.tools.request_restyle(clip.path.stem, prompt)
+
+    def run_bassito_round(
+        self,
+        scene_state: SceneState,
+        *,
+        runner: BassitoRunner | None = None,
+    ) -> SceneState:
+        """Execute queued Bassito jobs, integrate artifacts, rebuild the scene.
+
+        One proposed-changes round: jobs stay queued until this is called
+        explicitly (CLI ``--run-bassito`` or a SceneOps approval). Artifacts
+        replace their source clips (extend/restyle) or join the pool as new
+        clips (bridge shots); the rebuilt scene re-scores everything, so
+        Andrew re-checks Bassito's output.
+        """
+        jobs = list(scene_state.bridge_jobs) + list(scene_state.regeneration_jobs)
+        if not jobs:
+            return scene_state
+
+        runner = runner or BassitoRunner()
+        context = BassitoContext(
+            scene_id=scene_state.scene_id,
+            output_dir=Path(scene_state.output_dir),
+            clips={clip.path.stem: clip for clip in scene_state.available_clips},
+            resolution=scene_state.export_profile.resolution,
+            fps=scene_state.export_profile.fps,
+            style_profile=scene_state.style_profile,
+        )
+        runner.run_jobs(jobs, context)
+        integrated = self._integrate_bassito_artifacts(scene_state, jobs)
+        scene_state.bassito_history.extend(jobs)
+
+        failed = [job for job in jobs if job.status == "failed"]
+        for job in failed:
+            scene_state.errors.append(
+                StageError(
+                    stage="bassito",
+                    message=f"Job {job.job_id} ({job.job_type}) failed: {job.error}",
+                    severity=ErrorSeverity.WARN,
+                )
+            )
+        if integrated == 0:
+            return scene_state
+
+        scene_state.timeline_version += 1
+        scene_state.bridge_jobs = []
+        scene_state.regeneration_jobs = []
+        self.log.info(
+            f"Integrated {integrated} Bassito artifacts; rebuilding scene "
+            f"as timeline v{scene_state.timeline_version}"
+        )
+        return self.build_scene(scene_state)
+
+    def _integrate_bassito_artifacts(
+        self,
+        scene_state: SceneState,
+        jobs: list[BassitoJob],
+    ) -> int:
+        """Fold finished job artifacts back into the clip pool."""
+        integrated = 0
+        for job in jobs:
+            if job.status != "done" or not job.artifact_path:
+                continue
+            artifact = self.tools.probe_media(Path(job.artifact_path))
+            if artifact is None:
+                job.status = "failed"
+                job.error = "Artifact could not be probed as a video clip"
+                continue
+
+            source = next(
+                (
+                    clip
+                    for clip in scene_state.available_clips
+                    if clip.path.stem == job.replaces_clip_id
+                ),
+                None,
+            )
+            # Carry semantic metadata forward so scene-fit scoring keeps context.
+            if source is not None:
+                for key in ("scene_description", "location_tag", "mood", "subjects"):
+                    if key in source.metadata:
+                        artifact.metadata[key] = source.metadata[key]
+            artifact.metadata["bassito_generated"] = True
+            artifact.metadata["bassito_job_type"] = job.job_type
+            if job.replaces_clip_id:
+                artifact.metadata["bassito_source_clip"] = job.replaces_clip_id
+
+            if source is not None:
+                position = scene_state.available_clips.index(source)
+                scene_state.available_clips[position] = artifact
+            else:
+                scene_state.available_clips.append(artifact)
+            integrated += 1
+        return integrated
 
     def prepare_clip_for_assembly(
         self,
@@ -779,15 +918,13 @@ class SceneStitcherAgent:
         jobs: list[dict[str, str]] = []
         queued_jobs = list(scene_state.bridge_jobs) + list(scene_state.regeneration_jobs)
         for index, job in enumerate(queued_jobs, start=1):
-            source_clip_id = job.get("clip_id")
-            job_type = str(job.get("job_type", "bridge_shot"))
             jobs.append(
                 {
-                    "jobId": str(job.get("job_id", f"{scene_state.scene_id}_{job_type}_{index:02d}")),
-                    "jobType": job_type,
-                    "status": str(job.get("status", "queued")),
-                    **({"sourceClipId": str(source_clip_id)} if source_clip_id else {}),
-                    **({"artifactPath": str(job["artifact_path"])} if "artifact_path" in job else {}),
+                    "jobId": job.job_id or f"{scene_state.scene_id}_{job.job_type}_{index:02d}",
+                    "jobType": job.job_type,
+                    "status": job.status,
+                    **({"sourceClipId": job.source_clip_id} if job.source_clip_id else {}),
+                    **({"artifactPath": job.artifact_path} if job.artifact_path else {}),
                 }
             )
         return jobs

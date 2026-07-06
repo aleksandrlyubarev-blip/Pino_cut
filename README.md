@@ -167,12 +167,30 @@ pinocut scene build ./raw_footage \
   --output-dir ./output
 ```
 
-Current v1 code path exports scene artifacts as timeline and preview JSON manifests. It does not yet replace the full media render pipeline.
-It now also exports a frontend-ready SceneOps snapshot at:
+The scene build path renders real media via FFmpeg alongside the JSON artifacts:
 
 ```text
-output/<scene_id>.scene-ops.json
+output/<scene_id>.mp4              # final scene render (trim + transitions + audio mix)
+output/<scene_id>.preview.mp4      # fast low-res proxy for review
+output/<scene_id>.timeline.json    # timeline manifest
+output/<scene_id>.scene-ops.json   # frontend-ready SceneOps snapshot
 ```
+
+Transitions from the timeline (hard cuts, crossfade, dip-to-black) are applied with FFmpeg `concat`/`xfade`, music and voiceover tracks are mixed with gain and ducking, and clips are conformed to the export profile (resolution, fps). When FFmpeg or source media is unavailable, the build degrades gracefully to JSON-only export with a warning.
+
+### Bassito regeneration loop
+
+When the assembled scene falls short (clips too brief, technical flaws, duration deficit), the build queues **Bassito jobs** — proposed changes that are not applied until explicitly executed:
+
+```bash
+pinocut scene build ./raw_footage --goal "..." --duration 30 --run-bassito
+```
+
+- `extend` — pads a too-short take to its timeline target (replaces the source clip)
+- `restyle` — stabilizes and re-grades a flawed take (replaces the source clip)
+- `bridge_shot` — generates a new atmospheric shot from the anchor clip's closing frame (joins the pool as a new clip)
+
+Jobs run through a pluggable `GenerativeBackend` interface (`pinocut/bassito.py`). The shipped `FfmpegEffectsBackend` executes locally at zero cost; cloud generative providers implement the same interface. After a round, artifacts re-enter the clip pool, the timeline version is bumped, and the whole scene is rebuilt — so every generated clip passes Andrew's quality gate like any other take, and both timeline versions are persisted for review.
 
 ### Dispatch SceneOps snapshots to RomeoFlexVision
 
