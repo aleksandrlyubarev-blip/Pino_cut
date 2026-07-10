@@ -1,0 +1,238 @@
+{
+  "$comment": "PinoCut Director tool schemas v1. Portable JSON Schema function definitions — usable as Claude tools, OpenAI function-calling tools, or Custom GPT Actions (categories 1-3 are structured-output tools the model fulfils itself; category 4 'engine' tools map to the pinocut Python engine / HTTP wrapper).",
+  "tools": [
+    {
+      "category": "reasoning",
+      "name": "analyze_story",
+      "description": "Analyze a raw idea/script into story structure and an emotional arc map. Use in Phase 1 before any shot list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "raw_idea": { "type": "string", "description": "The user's idea, script, or voice-note transcript, verbatim." },
+          "platform": { "type": "string", "enum": ["youtube", "linkedin", "instagram_reels", "tiktok", "client", "other"] },
+          "target_duration_sec": { "type": "number" },
+          "audience": { "type": "string" },
+          "desired_viewer_action": { "type": "string", "description": "What the viewer should feel or do at the end." }
+        },
+        "required": ["raw_idea", "platform", "target_duration_sec"]
+      },
+      "returns": "StoryAnalysis: { logline, acts: [{beat, purpose, time_budget_sec}], emotional_arc: [{t_sec, emotion, intensity_0_10}], hook_strategy, risks }"
+    },
+    {
+      "category": "reasoning",
+      "name": "create_shot_list",
+      "description": "Turn an approved StoryAnalysis into a numbered shot list with camera language, duration, movement, lighting intent, emotional purpose, and asset source per shot. Durations must sum to target ±5%.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_analysis": { "type": "object", "description": "Output of analyze_story." },
+          "available_assets": {
+            "type": "array",
+            "items": { "type": "object", "properties": { "path": { "type": "string" }, "kind": { "type": "string", "enum": ["footage", "screen_recording", "image", "logo", "music", "vo"] }, "notes": { "type": "string" } } }
+          },
+          "aspect_ratio": { "type": "string", "enum": ["16:9", "9:16", "1:1", "4:5", "2.39:1"] }
+        },
+        "required": ["story_analysis", "aspect_ratio"]
+      },
+      "returns": "ShotList: [{ id, source: LIVE|SCREEN|GEN|HYBRID, description, framing, camera_movement, lighting_intent, duration_sec, emotional_purpose }]"
+    },
+    {
+      "category": "prompting",
+      "name": "generate_grok_image_prompts",
+      "description": "Generate a consistency-engineered Grok prompt pack for all GEN shots: style bible anchor block, character sheet prompts (canonical views, generated first), and per-shot prompts composed as [style anchor]+[verbatim character anchor]+[shot specifics]+[avoid list].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shot_list": { "type": "object", "description": "Output of create_shot_list; only GEN/HYBRID shots are processed." },
+          "style_keywords": { "type": "array", "items": { "type": "string" }, "description": "Look direction, e.g. ['cinematic', 'teal-amber', 'anamorphic']." },
+          "characters": {
+            "type": "array",
+            "items": { "type": "object", "properties": { "name": { "type": "string" }, "anchor_descriptor": { "type": "string", "description": "Fixed, verbatim-reused physical description block." } } }
+          },
+          "aspect_ratio": { "type": "string" }
+        },
+        "required": ["shot_list", "aspect_ratio"]
+      },
+      "returns": "PromptPack: { style_bible, character_sheets: [{character, prompts[]}], shot_prompts: [{shot_id, prompt, avoid, consistency_notes}], qc_checklist }"
+    },
+    {
+      "category": "reasoning",
+      "name": "suggest_edit_plan",
+      "description": "Produce the Resolve edit plan: assembly→rough→fine strategy, per-section pacing targets (avg cut length), specific cut types (J/L, match, on-action) with rationale, and timeline/track architecture.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shot_list": { "type": "object" },
+          "style_profile": { "type": "object", "description": "User style memory (pacing taste etc.); optional." },
+          "music_brief": { "type": "string" }
+        },
+        "required": ["shot_list"]
+      },
+      "returns": "EditPlan: { track_layout, sections: [{shots, pacing_avg_cut_sec, cut_types: [{between, type, rationale}]}], rough_cut_checklist }"
+    },
+    {
+      "category": "reasoning",
+      "name": "design_resolve_grade",
+      "description": "Design a Resolve color node tree for the project: ordered nodes with purpose, exact starting values (lift/gamma/gain, sat, hue curves), qualifier/power-window specs, LUT recommendation and placement, and scope-based verification steps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "look_direction": { "type": "string", "description": "e.g. 'clean corporate with slight teal-amber split tone'." },
+          "footage_notes": { "type": "string", "description": "Camera/log format, lighting conditions, mixed sources." },
+          "reference_images": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["look_direction"]
+      },
+      "returns": "GradeSpec: { node_tree: [{n, label, purpose, settings}], lut: {name, position}, scopes_checks[], per_platform_notes }"
+    },
+    {
+      "category": "reasoning",
+      "name": "plan_fairlight_audio",
+      "description": "Design the Fairlight audio strategy: per-track processing chains with exact values, loudness target, music ducking spec, and a sound-design beat map aligned to the shot list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shot_list": { "type": "object" },
+          "has_voiceover": { "type": "boolean" },
+          "platform": { "type": "string" },
+          "dialog_condition": { "type": "string", "description": "e.g. 'lav mic, quiet room' or 'laptop mic, echoey'." }
+        },
+        "required": ["shot_list", "platform"]
+      },
+      "returns": "AudioPlan: { tracks: [{name, chain: [{fx, settings}]}], loudness_target_lufs, ducking: {amount_db, ramp_ms}, sound_design_beats[] }"
+    },
+    {
+      "category": "artifact",
+      "name": "generate_resolve_python_script",
+      "description": "Generate a complete, runnable Python script against the official DaVinci Resolve Scripting API (DaVinciResolveScript) for a given task: project bootstrap, media import with bins/metadata, timeline population from a shot list, or render-queue setup. Must include env setup, error handling, and honest comments where the API has no coverage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "enum": ["bootstrap_project", "import_media", "populate_timeline", "setup_render_queue", "full_project_setup"] },
+          "project_name": { "type": "string" },
+          "shot_list": { "type": "object", "description": "Required for populate_timeline / full_project_setup." },
+          "media_root": { "type": "string", "description": "Absolute path to the project media folder." },
+          "render_preset": { "type": "object", "description": "Output of generate_export_preset; used for setup_render_queue." }
+        },
+        "required": ["task", "project_name"]
+      },
+      "returns": "Complete Python source (string)."
+    },
+    {
+      "category": "artifact",
+      "name": "create_project_structure",
+      "description": "Emit the standard PinoCut project folder tree (mkdir script + README.md template) for a new project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": { "type": "string" },
+          "platforms": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["project_slug"]
+      },
+      "returns": "{ mkdir_script, readme_template, tree_listing }"
+    },
+    {
+      "category": "artifact",
+      "name": "generate_export_preset",
+      "description": "Exact Resolve Deliver-page settings for a target platform: codec, container, resolution, bitrate/quality, color space tag, audio codec + loudness.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "platform": { "type": "string", "enum": ["youtube", "youtube_hdr", "linkedin", "instagram_reels", "tiktok", "client_master", "archive"] },
+          "resolution": { "type": "string" },
+          "frame_rate": { "type": "number" }
+        },
+        "required": ["platform"]
+      },
+      "returns": "ExportPreset: { format, codec, resolution, bitrate, color_space, audio: {codec, bitrate, lufs}, notes }"
+    },
+    {
+      "category": "engine",
+      "name": "scene_build",
+      "description": "PinoCut Engine: assemble a scene from a folder of clips (CLI `pinocut scene build`). Runs selection, trim, transitions, audio, and renders an mp4 + TimelineV1 JSON + SceneOps snapshot.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clips_dir": { "type": "string" },
+          "goal": { "type": "string", "description": "Scene goal, e.g. 'tense night-time reveal of the prototype'." },
+          "template": { "type": "string", "enum": ["dialogue", "montage", "trailer_cut"] },
+          "target_duration_sec": { "type": "number" },
+          "wait_bassito": { "type": "boolean", "description": "Block until generative jobs finish and re-assemble." }
+        },
+        "required": ["clips_dir", "goal"]
+      },
+      "returns": "{ scene_mp4, timeline_json, sceneops_snapshot }"
+    },
+    {
+      "category": "engine",
+      "name": "render_preview",
+      "description": "PinoCut Engine: fast low-res proxy render (480p ultrafast) of the current scene state for iteration.",
+      "parameters": {
+        "type": "object",
+        "properties": { "scene_id": { "type": "string" } },
+        "required": ["scene_id"]
+      },
+      "returns": "{ preview_path }"
+    },
+    {
+      "category": "engine",
+      "name": "export_scene",
+      "description": "PinoCut Engine: full-quality render of a TimelineV1 with an export profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scene_id": { "type": "string" },
+          "profile": { "type": "string", "description": "Export profile name (maps to generate_export_preset platforms)." }
+        },
+        "required": ["scene_id", "profile"]
+      },
+      "returns": "{ output_path }"
+    },
+    {
+      "category": "engine",
+      "name": "request_bridge_shot",
+      "description": "PinoCut Engine (Bassito): queue generation of a missing bridge shot between two clips. Returns a job; the regeneration loop re-assembles the scene when done.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": { "type": "string" },
+          "scene_id": { "type": "string" },
+          "duration_sec": { "type": "number" },
+          "max_cost_usd": { "type": "number" }
+        },
+        "required": ["prompt", "scene_id"]
+      },
+      "returns": "BassitoJob: { job_id, status }"
+    },
+    {
+      "category": "engine",
+      "name": "request_extend",
+      "description": "PinoCut Engine (Bassito): extend an existing clip generatively (or ffmpeg fallback) when it is too short for its slot.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clip_id": { "type": "string" },
+          "extra_seconds": { "type": "number" },
+          "direction": { "type": "string", "enum": ["head", "tail"] }
+        },
+        "required": ["clip_id", "extra_seconds"]
+      },
+      "returns": "BassitoJob"
+    },
+    {
+      "category": "engine",
+      "name": "request_restyle",
+      "description": "PinoCut Engine (Bassito): restyle a clip to match the scene's look (generative restyle or LUT/stabilize fallback).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clip_id": { "type": "string" },
+          "style_prompt": { "type": "string" }
+        },
+        "required": ["clip_id", "style_prompt"]
+      },
+      "returns": "BassitoJob"
+    }
+  ]
+}
