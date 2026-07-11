@@ -11,6 +11,30 @@ from pinocut.config import ColorGradeStyle, ProjectConfig, RenderPreset
 SCENE_SUBCOMMANDS = {"build"}
 
 
+def parse_serve_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="pinocut serve",
+        description="Serve the PinoCut Engine HTTP API for the Director layer",
+    )
+    parser.add_argument("--host", type=str, default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8642)
+    return parser.parse_args(argv)
+
+
+def main_serve(argv: list[str] | None = None) -> int:
+    args = parse_serve_args(argv)
+    try:
+        from pinocut.director_api import serve
+    except ImportError:
+        print(
+            "The API server needs the 'api' extra: pip install -e '.[api]'",
+            file=sys.stderr,
+        )
+        return 1
+    serve(host=args.host, port=args.port)
+    return 0
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="pinocut",
@@ -163,6 +187,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv[1:]
     if len(argv) >= 2 and argv[0] == "scene" and argv[1] in SCENE_SUBCOMMANDS:
         return main_scene(argv[1:])
+    if argv and argv[0] == "serve":
+        return main_serve(argv[1:])
 
     args = parse_args(argv)
 

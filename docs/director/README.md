@@ -18,4 +18,22 @@ Designed to be runtime-portable: developed with Claude, deployable to ChatGPT 5.
 
 ## Relationship to the Engine
 
-Director tool category `engine` in `tools.json` maps 1:1 onto `pinocut.scene_tools.SceneToolbox` and the `pinocut scene build` CLI. To wire it up as Custom GPT Actions, a thin HTTP wrapper (FastAPI over `SceneToolbox`) is needed — tracked in the roadmap (`docs/goal-plan-pinocut-bassito-v1.md`).
+Director tool category `engine` in `tools.json` maps 1:1 onto `pinocut.scene_tools.SceneToolbox` and the `pinocut scene build` CLI, and is served over HTTP by `pinocut/director_api.py`:
+
+```bash
+pip install -e ".[api]"
+export PINOCUT_API_TOKEN=<secret>       # optional; unset = open (local dev only)
+pinocut serve --host 127.0.0.1 --port 8642
+```
+
+| Endpoint | Director tool |
+|---|---|
+| `POST /scenes` | `scene_build` (async: returns 202, poll `GET /scenes/{id}`) |
+| `GET /scenes/{id}` | build/render status + artifact paths |
+| `POST /scenes/{id}/jobs` | `request_bridge_shot` / `request_extend` / `request_restyle` |
+| `POST /scenes/{id}/jobs/run` | execute the Bassito queue, rebuild the scene |
+| `POST /scenes/{id}/preview` | `render_preview` |
+| `POST /scenes/{id}/export` | `export_scene` |
+| `GET /scenes/{id}/video` | download the rendered mp4 |
+
+To wire it into a Custom GPT: import `http://<host>:8642/openapi.json` as the Actions schema and set Bearer auth with the `PINOCUT_API_TOKEN` value. Heavy operations never block a request — every mutating call returns `202` immediately and the LLM polls, which stays inside Action timeout limits.

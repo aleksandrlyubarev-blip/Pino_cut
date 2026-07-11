@@ -44,7 +44,8 @@ Romeo Flex Vision API
 ```bash
 pip install -e .                # Core
 pip install -e ".[whisper]"     # + Whisper speech detection
-pip install -e ".[full]"        # + E2B + LiteLLM
+pip install -e ".[api]"         # + Director HTTP API (FastAPI + uvicorn)
+pip install -e ".[full]"        # + E2B + LiteLLM + API
 pip install -e ".[dev]"         # + pytest + ruff
 ```
 
@@ -62,7 +63,12 @@ pinocut ./raw_footage --color-grade cinematic --metrics --metrics-path metrics.j
 
 # E2B sandbox + persist cache + register in Swarm
 pinocut ./raw_footage --sandbox e2b --memory-persist --register-swarm
+
+# Serve the Engine HTTP API for the Director layer (Custom GPT Actions / LLM tools)
+pinocut serve --host 127.0.0.1 --port 8642
 ```
+
+The Director layer (LLM persona, tool schemas, DaVinci Resolve templates, Grok prompting guide) lives in [`docs/director/`](docs/director/); `pinocut serve` exposes scene assembly to it over HTTP with an OpenAPI schema at `/openapi.json`.
 
 ### Python API
 

@@ -76,7 +76,7 @@ Full schemas in `tools.json`. Four categories:
 3. **Artifact-generation tools**: `generate_resolve_python_script`, `create_project_structure`, `generate_export_preset`.
 4. **Engine tools** (map 1:1 to this repo, callable when the Engine is reachable): `scene_build` (CLI `pinocut scene build`), `render_preview`, `export_scene`, `request_bridge_shot` / `request_extend` / `request_restyle` (Bassito jobs).
 
-In the ChatGPT runtime, categories 1–3 are "always available" (the model produces the artifact directly; the tool schema exists to force structured output). Category 4 requires Actions pointing at a thin HTTP wrapper around the Engine (FastAPI over `SceneToolbox` — small, ~200 lines, listed in Next Steps).
+In the ChatGPT runtime, categories 1–3 are "always available" (the model produces the artifact directly; the tool schema exists to force structured output). Category 4 is served by the Engine HTTP API (`pinocut/director_api.py`, run with `pinocut serve`) — its `/openapi.json` is the Actions schema, with Bearer auth via `PINOCUT_API_TOKEN`. See README.md in this directory for the endpoint↔tool mapping.
 
 ## 5. Runtime recommendation for ChatGPT 5.6
 
