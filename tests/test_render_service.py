@@ -185,6 +185,7 @@ def probe(path: Path) -> dict:
 
 
 @requires_ffmpeg
+@pytest.mark.slow
 def test_scene_build_renders_real_video(tmp_path: Path) -> None:
     clips_dir = tmp_path / "clips"
     clips_dir.mkdir()
@@ -236,6 +237,7 @@ def test_scene_build_renders_real_video(tmp_path: Path) -> None:
 
 
 @requires_ffmpeg
+@pytest.mark.slow
 def test_render_skip_warns_but_keeps_timeline_export(tmp_path: Path, monkeypatch) -> None:
     clips_dir = tmp_path / "clips"
     clips_dir.mkdir()

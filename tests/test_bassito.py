@@ -121,6 +121,7 @@ def generate_clip(path: Path, *, duration: float, freq: int) -> None:
 
 
 @requires_ffmpeg
+@pytest.mark.slow
 def test_regeneration_round_extends_and_bridges(tmp_path: Path) -> None:
     clips_dir = tmp_path / "clips"
     clips_dir.mkdir()
@@ -175,6 +176,7 @@ def test_regeneration_round_extends_and_bridges(tmp_path: Path) -> None:
 
 
 @requires_ffmpeg
+@pytest.mark.slow
 def test_second_round_does_not_requeue_generated_clips(tmp_path: Path) -> None:
     clips_dir = tmp_path / "clips"
     clips_dir.mkdir()

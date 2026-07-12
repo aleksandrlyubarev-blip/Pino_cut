@@ -155,6 +155,33 @@ class SceneRenderService:
         self.log.info(f"Rendered scene video: {output_path}")
         return output_path
 
+    def transcode_preview(
+        self,
+        source: Path,
+        output_path: Path,
+        profile: ExportProfile,
+    ) -> Path | None:
+        """Cheap low-res proxy from an already-rendered video (single transcode)."""
+        if not self.is_available() or not source.exists():
+            return None
+        settings = RenderSettings.for_profile(profile, preview=True)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        args = [
+            "-i", str(source),
+            "-vf",
+            f"scale={settings.width}:{settings.height},format=yuv420p",
+            "-c:v", "libx264",
+            "-preset", settings.preset,
+            "-crf", str(settings.crf),
+            "-c:a", "aac",
+            "-b:a", "96k",
+            "-y", str(output_path),
+        ]
+        if self._run(args) != 0:
+            self.log.warn("Preview transcode failed")
+            return None
+        return output_path
+
     # ── command builders (pure, unit-testable) ──
 
     def build_normalize_args(

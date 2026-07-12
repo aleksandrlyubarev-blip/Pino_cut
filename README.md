@@ -178,6 +178,10 @@ output/<scene_id>.scene-ops.json   # frontend-ready SceneOps snapshot
 
 Transitions from the timeline (hard cuts, crossfade, dip-to-black) are applied with FFmpeg `concat`/`xfade`, music and voiceover tracks are mixed with gain and ducking, and clips are conformed to the export profile (resolution, fps). When FFmpeg or source media is unavailable, the build degrades gracefully to JSON-only export with a warning.
 
+### Real clip analysis
+
+Before scoring, every source clip is measured with real signals (`pinocut/scene_analysis.py`): sharpness → `quality_score`, per-frame luma spread → `brightness_variance`, inter-frame jitter via phase correlation → `shake_score`, peak visual change → `action_peak_sec`, and ffmpeg `silencedetect` → speech segments for smart trimming. Andrew's rubric and the restyle/regeneration triggers run on these measurements instead of defaults; when Romeo Flex Vision is configured (`ROMEO_VISION_URL`/`ROMEO_VISION_KEY`), semantic fields (scene description, mood, subjects) are merged in for scene-fit scoring.
+
 ### Bassito regeneration loop
 
 When the assembled scene falls short (clips too brief, technical flaws, duration deficit), the build queues **Bassito jobs** — proposed changes that are not applied until explicitly executed:

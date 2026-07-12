@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import UTC, datetime
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from pinocut.bassito import BassitoContext, BassitoRunner
-from pinocut.config import ProjectConfig, SUPPORTED_VIDEO_EXTENSIONS
+from pinocut.config import SUPPORTED_VIDEO_EXTENSIONS, ProjectConfig
+from pinocut.scene_analysis import SceneClipAnalyzer
 from pinocut.scene_tools import SceneToolbox
 from pinocut.state import (
     BassitoJob,
@@ -61,8 +62,10 @@ class SceneStitcherAgent:
     """Deterministic scene-level planner for Pinnocat v1."""
 
     def __init__(self, *, structured_logs: bool = False):
+        self._structured_logs = structured_logs
         self.log = StageLogger("scene_stitcher", structured=structured_logs)
         self.tools = SceneToolbox(structured_logs=structured_logs)
+        self.analyzer = SceneClipAnalyzer(structured_logs=structured_logs)
 
     def build_from_request(self, request: SceneBuildRequest) -> SceneState:
         clip_paths = self._discover_clip_paths(request.input_folder, request.max_clips)
@@ -98,6 +101,7 @@ class SceneStitcherAgent:
                 )
             )
             return scene_state
+        self.analyzer.analyze_clips(scene_state.available_clips)
         self._normalize_clips(scene_state)
         self._score_clips(scene_state)
         self._select_clips(scene_state)
@@ -310,11 +314,14 @@ class SceneStitcherAgent:
             bridge_job.params.setdefault("anchor_clip_id", selected_clips[-1].path.stem)
             scene_state.bridge_jobs.append(bridge_job)
 
-        for index, job in enumerate(
-            scene_state.bridge_jobs + scene_state.regeneration_jobs, start=1
-        ):
-            if not job.job_id:
-                job.job_id = f"{scene_state.scene_id}_{job.job_type}_{index:02d}"
+        job_counters: dict[str, int] = {}
+        for job in scene_state.bridge_jobs + scene_state.regeneration_jobs:
+            if job.job_id:
+                continue
+            job_counters[job.job_type] = job_counters.get(job.job_type, 0) + 1
+            job.job_id = (
+                f"{scene_state.scene_id}_{job.job_type}_{job_counters[job.job_type]:02d}"
+            )
 
     def _assemble_timeline(self, scene_state: SceneState) -> None:
         clip_map = {clip.path.stem: clip for clip in scene_state.available_clips}
@@ -461,12 +468,14 @@ class SceneStitcherAgent:
             scene_state.output_dir,
             comment="Initial rough cut export",
         )
-        scene_ops_path = self._export_scene_ops_snapshot(scene_state)
         scene_state.version_history.append(str(version_path))
         scene_state.reviews["preview_path"] = str(preview_path)
         scene_state.reviews["timeline_path"] = str(timeline_path)
-        scene_state.reviews["scene_ops_path"] = str(scene_ops_path)
+        # Render before the snapshot so the exported SceneOps payload can
+        # reference the produced video and preview files.
         self._render_media(scene_state)
+        scene_ops_path = self._export_scene_ops_snapshot(scene_state)
+        scene_state.reviews["scene_ops_path"] = str(scene_ops_path)
 
     def _render_media(self, scene_state: SceneState) -> None:
         video_path = self.tools.render_scene_media(scene_state)
@@ -483,7 +492,7 @@ class SceneStitcherAgent:
             )
             return
         scene_state.reviews["video_path"] = str(video_path)
-        preview_video = self.tools.render_scene_media(scene_state, preview=True)
+        preview_video = self.tools.make_preview_proxy(scene_state, video_path)
         if preview_video is not None:
             scene_state.reviews["preview_video_path"] = str(preview_video)
 
@@ -709,7 +718,7 @@ class SceneStitcherAgent:
         if not jobs:
             return scene_state
 
-        runner = runner or BassitoRunner()
+        runner = runner or BassitoRunner(structured_logs=self._structured_logs)
         context = BassitoContext(
             scene_id=scene_state.scene_id,
             output_dir=Path(scene_state.output_dir),
@@ -720,23 +729,34 @@ class SceneStitcherAgent:
         )
         runner.run_jobs(jobs, context)
         integrated = self._integrate_bassito_artifacts(scene_state, jobs)
+        # Executed jobs are terminal either way; the queue only holds proposals.
         scene_state.bassito_history.extend(jobs)
+        scene_state.bridge_jobs = []
+        scene_state.regeneration_jobs = []
 
-        failed = [job for job in jobs if job.status == "failed"]
-        for job in failed:
-            scene_state.errors.append(
-                StageError(
-                    stage="bassito",
-                    message=f"Job {job.job_id} ({job.job_type}) failed: {job.error}",
-                    severity=ErrorSeverity.WARN,
+        if integrated:
+            # The rebuilt version gets a fresh error report; stale warnings
+            # from the previous timeline no longer describe current state.
+            scene_state.errors = []
+        for job in jobs:
+            if job.status == "failed":
+                scene_state.errors.append(
+                    StageError(
+                        stage="bassito",
+                        message=f"Job {job.job_id} ({job.job_type}) failed: {job.error}",
+                        severity=ErrorSeverity.WARN,
+                    )
                 )
-            )
+
         if integrated == 0:
+            # Nothing to rebuild: refresh the snapshot so SceneOps sees the
+            # failed jobs instead of waiting on a queue that no longer exists.
+            scene_state.reviews["scene_ops_path"] = str(
+                self._export_scene_ops_snapshot(scene_state)
+            )
             return scene_state
 
         scene_state.timeline_version += 1
-        scene_state.bridge_jobs = []
-        scene_state.regeneration_jobs = []
         self.log.info(
             f"Integrated {integrated} Bassito artifacts; rebuilding scene "
             f"as timeline v{scene_state.timeline_version}"
@@ -852,6 +872,16 @@ class SceneStitcherAgent:
                 "usedClips": scene_state.timeline.used_clips if scene_state.timeline else [],
                 "rejectedClips": list(scene_state.rejected_clips),
                 "queueState": queue_state,
+                **(
+                    {"videoPath": scene_state.reviews["video_path"]}
+                    if "video_path" in scene_state.reviews
+                    else {}
+                ),
+                **(
+                    {"previewVideoPath": scene_state.reviews["preview_video_path"]}
+                    if "preview_video_path" in scene_state.reviews
+                    else {}
+                ),
             },
             "clipScores": clip_scores,
             "andrew": {
@@ -916,7 +946,11 @@ class SceneStitcherAgent:
 
     def _build_bassito_jobs(self, scene_state: SceneState) -> list[dict[str, str]]:
         jobs: list[dict[str, str]] = []
-        queued_jobs = list(scene_state.bridge_jobs) + list(scene_state.regeneration_jobs)
+        queued_jobs = (
+            list(scene_state.bassito_history)
+            + list(scene_state.bridge_jobs)
+            + list(scene_state.regeneration_jobs)
+        )
         for index, job in enumerate(queued_jobs, start=1):
             jobs.append(
                 {
@@ -934,7 +968,7 @@ class SceneStitcherAgent:
         scene_state: SceneState,
         bassito_jobs: list[dict[str, str]],
     ) -> str:
-        if bassito_jobs:
+        if any(job["status"] in ("queued", "running") for job in bassito_jobs):
             return "waiting_bassito"
         if scene_state.errors:
             return "reviewing"

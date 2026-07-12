@@ -160,8 +160,9 @@ class FfmpegEffectsBackend(GenerativeBackend):
             job,
         )
         total_frames = int(duration * context.fps)
+        # 1.5x headroom is enough for a 1.15x max zoom and much cheaper than 2x.
         zoompan = (
-            f"scale={width * 2}:{height * 2},"
+            f"scale={width * 3 // 2}:{height * 3 // 2},"
             f"zoompan=z='1+0.15*on/{total_frames}'"
             f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
             f":d={total_frames}:s={width}x{height}:fps={context.fps}"
