@@ -78,7 +78,7 @@
 ### G3. Настоящий анализ — «Romeo видит, а не читает имя файла»
 Приоритет: **P1**.
 
-- **G3.1** Переиспользовать `AnalyzeStage` в scene-пайплайне: Whisper/VAD-сегменты речи, keyframe-гистограммы, shake-метрика → заполнять `clip.metadata` реальными `quality_score`, `brightness_variance`, `shake_score`, `action_peak_sec` (сейчас smart_trim работает только если эти поля кто-то положил).
+- **G3.1** ✅ Переиспользовать `AnalyzeStage` в scene-пайплайне: Whisper/VAD-сегменты речи, keyframe-гистограммы, shake-метрика → заполнять `clip.metadata` реальными `quality_score`, `brightness_variance`, `shake_score`, `action_peak_sec` (сейчас smart_trim работает только если эти поля кто-то положил). — Сделано в `pinocut/scene_analysis.py` (`SceneClipAnalyzer`, OpenCV-only визуальный проход: sharpness/exposure → quality_score, phase-correlate jitter → shake_score, пик движения → action_peak_sec; речь — общий energy-VAD через moviepy/ffmpeg при наличии). Подключено в `build_scene` перед скорингом; probe получил cv2-фоллбэк.
 - **G3.2** Romeo FV enrichment для сцен: `scene_description`, `subjects`, `mood`, `location_tag` из `integrations/romeo_vision.py` (HTTP + cache уже есть) — вместо токенов из имени файла в `_calculate_scene_overlap`.
 - **G3.3** Семантическое сходство scene goal ↔ клип: embedding-сравнение (локальная модель или LiteLLM), токен-оверлап оставить как офлайн-фоллбэк.
 - **G3.4** Субтитры: `generate_subtitles` через Whisper (extra уже объявлен в pyproject), burn-in стилем из `effects.py`.

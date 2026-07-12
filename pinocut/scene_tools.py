@@ -262,6 +262,8 @@ class SceneToolbox:
         if probed is None:
             probed = self._probe_with_ffprobe(filepath)
         if probed is None:
+            probed = self._probe_with_opencv(filepath)
+        if probed is None:
             return None
 
         duration, has_audio, resolution, fps = probed
@@ -291,6 +293,33 @@ class SceneToolbox:
                     (vclip.w, vclip.h),
                     float(vclip.fps),
                 )
+        except Exception:
+            return None
+
+    def _probe_with_opencv(
+        self, filepath: Path
+    ) -> tuple[float, bool, tuple[int, int], float] | None:
+        """Last-resort probe via cv2 (no moviepy/ffprobe on the host).
+
+        OpenCV cannot see audio streams, so ``has_audio`` is reported False;
+        audio-dependent steps degrade the same way they do for silent clips.
+        """
+        try:
+            import cv2
+
+            capture = cv2.VideoCapture(str(filepath))
+            try:
+                if not capture.isOpened():
+                    return None
+                frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+                fps = float(capture.get(cv2.CAP_PROP_FPS)) or 24.0
+                width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                if frame_count <= 0 or fps <= 0 or width <= 0 or height <= 0:
+                    return None
+                return (frame_count / fps, False, (width, height), fps)
+            finally:
+                capture.release()
         except Exception:
             return None
 

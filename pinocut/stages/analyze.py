@@ -153,23 +153,9 @@ class AnalyzeStage(BaseStage):
         return self._energy_vad(audio_array, config.audio_ducking.energy_vad_threshold)
 
     def _energy_vad(self, audio: np.ndarray, threshold: float, window_sec: float = 0.5, sr: int = 16000) -> list[tuple[float, float]]:
-        window = int(window_sec * sr)
-        segments: list[tuple[float, float]] = []
-        in_speech = False
-        start = 0.0
+        from pinocut.scene_analysis import energy_vad
 
-        for i in range(0, len(audio) - window, window):
-            rms = float(np.sqrt(np.mean(audio[i:i + window] ** 2)))
-            if rms > threshold and not in_speech:
-                in_speech = True
-                start = i / sr
-            elif rms <= threshold and in_speech:
-                in_speech = False
-                segments.append((start, i / sr))
-
-        if in_speech:
-            segments.append((start, len(audio) / sr))
-        return segments
+        return energy_vad(audio, threshold, window_sec=window_sec, sr=sr)
 
     def _frame_histogram(self, vclip, t: float) -> list[float]:
         import cv2

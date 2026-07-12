@@ -11,6 +11,7 @@ from typing import Literal
 
 from pinocut.bassito import BassitoContext, BassitoRunner
 from pinocut.config import ProjectConfig, SUPPORTED_VIDEO_EXTENSIONS
+from pinocut.scene_analysis import SceneClipAnalyzer
 from pinocut.scene_tools import SceneToolbox
 from pinocut.state import (
     BassitoJob,
@@ -63,6 +64,7 @@ class SceneStitcherAgent:
     def __init__(self, *, structured_logs: bool = False):
         self.log = StageLogger("scene_stitcher", structured=structured_logs)
         self.tools = SceneToolbox(structured_logs=structured_logs)
+        self.analyzer = SceneClipAnalyzer(structured_logs=structured_logs)
 
     def build_from_request(self, request: SceneBuildRequest) -> SceneState:
         clip_paths = self._discover_clip_paths(request.input_folder, request.max_clips)
@@ -99,6 +101,7 @@ class SceneStitcherAgent:
             )
             return scene_state
         self._normalize_clips(scene_state)
+        self._analyze_clip_content(scene_state)
         self._score_clips(scene_state)
         self._select_clips(scene_state)
         self._prepare_approved_clips(scene_state)
@@ -107,6 +110,22 @@ class SceneStitcherAgent:
         self._attach_subtitles(scene_state)
         self._export(scene_state)
         return scene_state
+
+    def _analyze_clip_content(self, scene_state: SceneState) -> None:
+        """Fill clip metadata with real content metrics before Andrew scores them.
+
+        Unreadable files (or clips whose metadata was already provided) are
+        left untouched, so upstream-enriched and test-fixture clips keep
+        their values.
+        """
+        analyzed = sum(
+            1 for clip in scene_state.available_clips if self.analyzer.annotate_clip(clip)
+        )
+        if analyzed:
+            self.log.info(
+                f"Content analysis: {analyzed}/{len(scene_state.available_clips)} "
+                "clips annotated with real metrics"
+            )
 
     def _normalize_clips(self, scene_state: SceneState) -> None:
         target_audio_rate = 48000
