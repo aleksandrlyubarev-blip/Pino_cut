@@ -218,6 +218,15 @@ class SceneToolbox:
         )
         return self.renderer.render(scene_state.timeline, clip_paths, output_path)
 
+    def export_resolve_edl(self, scene_state: SceneState) -> Path | None:
+        """Write a CMX 3600 EDL for finishing the scene in DaVinci Resolve."""
+        if scene_state.timeline is None:
+            return None
+        from pinocut.resolve_export import export_edl
+
+        clip_paths = {clip.path.stem: clip.path for clip in scene_state.available_clips}
+        return export_edl(scene_state.timeline, clip_paths, scene_state.output_dir)
+
     def make_preview_proxy(self, scene_state: SceneState, final_video: Path) -> Path | None:
         """Derive the low-res preview from the final render in one transcode."""
         preview_path = Path(scene_state.output_dir) / f"{scene_state.scene_id}.preview.mp4"

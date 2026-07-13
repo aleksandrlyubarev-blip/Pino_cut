@@ -471,6 +471,9 @@ class SceneStitcherAgent:
         scene_state.version_history.append(str(version_path))
         scene_state.reviews["preview_path"] = str(preview_path)
         scene_state.reviews["timeline_path"] = str(timeline_path)
+        edl_path = self.tools.export_resolve_edl(scene_state)
+        if edl_path is not None:
+            scene_state.reviews["edl_path"] = str(edl_path)
         # Render before the snapshot so the exported SceneOps payload can
         # reference the produced video and preview files.
         self._render_media(scene_state)

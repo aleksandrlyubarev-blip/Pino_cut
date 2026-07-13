@@ -101,6 +101,8 @@
 - **G5.2** README/лендинг: сравнительная таблица из раздела 1, честная — «мы не клиппер, мы scene assembly agent».
 - **G5.3** SceneOps dashboard в RomeoFlexVision довести до review-цикла: HITL-кнопки approve/modify уже заложены в snapshot (`hitlDecision`) — подключить обратный канал (пока можно через repository_dispatch).
 - **G5.4** Опционально: тонкий «клиппер-режим» (trailer_cut template + 9:16 reframe + burn-in субтитры) как воронка — знакомый рынку вход, за которым видна глубина.
+- **G5.5** ✅ **DaVinci Resolve как финишный слой.** `TimelineV1` экспортируется в CMX 3600 EDL (`scene_id.edl`, склейки + диссолвы + имена клипов) — сцена из PinoCut открывается в Resolve для цветокоррекции и финиша. Позиционирование: «PinoCut собирает черновик агентно, Resolve финиширует» — снимает возражение «rough cut ≠ финальное качество» и выводит на профессиональную аудиторию. Следующие шаги направления: FCPXML/OTIO для более богатой передачи (аудиодорожки, маркеры с Andrew-заметками), интеграция с Resolve Python Scripting API / MCP (тренд `davinci-resolve-mcp` подтверждает агентное управление NLE).
+- **G5.6** Кандидаты на облачный `GenerativeBackend` для Bassito: Higgsfield (generate video, inpaint, upscale, reframe — есть и плагины для Resolve), Runway, Kling. Интерфейс готов (`pinocut/bassito.py`), подключение — реализация одного класса.
 
 ---
 

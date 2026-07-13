@@ -173,8 +173,11 @@ The scene build path renders real media via FFmpeg alongside the JSON artifacts:
 output/<scene_id>.mp4              # final scene render (trim + transitions + audio mix)
 output/<scene_id>.preview.mp4      # fast low-res proxy for review
 output/<scene_id>.timeline.json    # timeline manifest
+output/<scene_id>.edl              # CMX 3600 EDL for finishing in DaVinci Resolve
 output/<scene_id>.scene-ops.json   # frontend-ready SceneOps snapshot
 ```
+
+The EDL carries the cuts and dissolves with source clip names, so the assembled scene can be conformed and finished (color, audio, VFX) in DaVinci Resolve or any NLE that imports CMX 3600.
 
 Transitions from the timeline (hard cuts, crossfade, dip-to-black) are applied with FFmpeg `concat`/`xfade`, music and voiceover tracks are mixed with gain and ducking, and clips are conformed to the export profile (resolution, fps). When FFmpeg or source media is unavailable, the build degrades gracefully to JSON-only export with a warning.
 

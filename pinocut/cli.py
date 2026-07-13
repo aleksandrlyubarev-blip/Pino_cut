@@ -140,6 +140,7 @@ def main_scene(argv: list[str] | None = None) -> int:
         print(f"Preview manifest: {scene_state.reviews.get('preview_path', 'n/a')}")
         print(f"Scene video: {scene_state.reviews.get('video_path', 'not rendered')}")
         print(f"Preview video: {scene_state.reviews.get('preview_video_path', 'not rendered')}")
+        print(f"Resolve EDL: {scene_state.reviews.get('edl_path', 'n/a')}")
         print(f"Timeline version: v{scene_state.timeline_version}")
 
     executed = scene_state.bassito_history
