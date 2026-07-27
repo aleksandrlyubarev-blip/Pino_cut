@@ -1,0 +1,35 @@
+[
+  {
+    "docId": "script_v17",
+    "source": "script_v17.pdf",
+    "dataClass": "private_development",
+    "uri": "gs://studio-a-private/film-123/script_v17.pdf",
+    "text": "Script v17 — scenes, locations and cast.\n\nINT. STUDIO A - DAY\n\nMAYA enters, carrying the storyboard.\n\nMAYA\nWe shoot the rig sequence today.\n\nEXT. BACKLOT - NIGHT\n\nRain machine floods the street. A car rig waits under the lights.\n\nDANIEL\nThe chase starts here.\n\nCUT TO:\n\nINT. STUDIO A - NIGHT\n\nThe crew resets for the last take.\n"
+  },
+  {
+    "docId": "callsheet_2026_09_10",
+    "source": "callsheet_2026-09-10.pdf",
+    "dataClass": "restricted_production",
+    "uri": "gs://studio-a-production/film-123/callsheet_2026-09-10.pdf",
+    "text": "Call sheet 2026-09-10. Scenes 12-18. Units: Studio A, Backlot. Cast: MAYA, DANIEL. Crew call 07:00, first shot 08:30. Weather: rain expected after 18:00."
+  },
+  {
+    "docId": "location_notes_backlot",
+    "source": "location_notes_backlot.md",
+    "dataClass": "restricted_production",
+    "text": "Backlot: night exteriors only after 20:00 due to neighbour agreement. Rain machine requires two hours of prep and a standby plumber. Picture vehicles park on the north side."
+  },
+  {
+    "docId": "vendor_delivery_spec",
+    "source": "vendor_delivery_spec.md",
+    "dataClass": "partner_shared",
+    "text": "Delivery spec for post partners: ProRes 422 HQ, 1920x1080, 24 fps, stereo mix at -23 LUFS. Turnaround for approved dailies is 24 hours."
+  },
+  {
+    "docId": "press_kit",
+    "source": "press_kit.md",
+    "dataClass": "public_fan_safe",
+    "uri": "https://example.com/film-123/press-kit",
+    "text": "The film shoots on a practical backlot with a full-scale street set. Published behind-the-scenes material covers the rain sequence and the picture vehicles. Press contact: press@example.com."
+  }
+]

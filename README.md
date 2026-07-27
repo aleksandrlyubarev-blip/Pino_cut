@@ -254,6 +254,34 @@ python scripts/dispatch_scene_ops.py \
   --dry-run
 ```
 
+## Gemini / Agent Builder platform layer
+
+Alongside the video engine, the repository carries a production-oriented
+multi-agent platform layer for film and media on Gemini and Google Cloud Agent
+Builder — specification plus a runnable reference implementation.
+
+- [docs/gemini-platform/README.md](docs/gemini-platform/README.md) — index and executive summary
+- [docs/gemini-platform/architecture.md](docs/gemini-platform/architecture.md) — contours, agent roles, model routing, flows
+- [docs/gemini-platform/mcp-contract.md](docs/gemini-platform/mcp-contract.md) — partner MCP profile, event contract, orchestration API
+- [docs/gemini-platform/governance.md](docs/gemini-platform/governance.md) — data classes, HITL matrix, security, GDPR
+- [docs/gemini-platform/delivery-plan.md](docs/gemini-platform/delivery-plan.md) — tooling comparison, cost model, prototype and test plan
+- [docs/gemini-platform/reference-implementation.md](docs/gemini-platform/reference-implementation.md) — what runs today and how
+
+The implementation lives in `pinocut/agentplatform/` and has no third-party
+dependencies: models, retrieval and the MCP transport are injected, so the same
+agent graph runs against Google Cloud in production and against fakes in tests.
+
+```bash
+pinocut platform plan docs/gemini-platform/corpus.example.json \
+  --goal "собери план съёмочного дня по сценам 12-18" \
+  --script-version v17 \
+  --out output/run.json
+```
+
+The run stops at `awaiting_approval` and prints the audit trail: scheduling,
+publication and fan-facing release always wait for a human decision, and the CLI
+deliberately cannot approve on their behalf.
+
 ## License
 
 MIT

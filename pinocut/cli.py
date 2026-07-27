@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from pinocut.config import ColorGradeStyle, ProjectConfig, RenderPreset
 
 SCENE_SUBCOMMANDS = {"build"}
+PLATFORM_SUBCOMMANDS = {"plan"}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -159,10 +161,126 @@ def main_scene(argv: list[str] | None = None) -> int:
     return 0
 
 
+def parse_platform_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="pinocut platform",
+        description="Gemini/Agent Builder multi-agent platform layer",
+    )
+    subparsers = parser.add_subparsers(dest="platform_command", required=True)
+
+    plan = subparsers.add_parser("plan", help="Run the shoot-day-plan workflow")
+    plan.add_argument("corpus", type=Path, help="JSON corpus manifest (see docs/gemini-platform)")
+    plan.add_argument("--goal", type=str, required=True, help="What the production team asked for")
+    plan.add_argument("--project-id", type=str, default="film-123")
+    plan.add_argument("--user-id", type=str, default="local-user")
+    plan.add_argument("--script-version", type=str, default=None)
+    plan.add_argument(
+        "--contour",
+        choices=["internal", "partner", "fan"],
+        default="internal",
+        help="Access contour of the caller (default: internal)",
+    )
+    plan.add_argument("--mcp-endpoint", type=str, default=None, help="Partner MCP /mcp endpoint")
+    plan.add_argument(
+        "--mcp-token-env",
+        type=str,
+        default="PARTNER_MCP_TOKEN",
+        help="Environment variable holding the partner bearer token",
+    )
+    plan.add_argument("--budget-cap", type=float, default=0.0, help="Monthly USD cap (0 = off)")
+    plan.add_argument("--out", type=Path, default=None, help="Write the run JSON here")
+    plan.add_argument("--structured-logs", action="store_true")
+
+    return parser.parse_args(argv)
+
+
+def main_platform(argv: list[str] | None = None) -> int:
+    args = parse_platform_args(argv)
+
+    import os
+
+    from pinocut.agentplatform import (
+        AgentDeps,
+        BudgetGuard,
+        Contour,
+        HttpTransport,
+        InMemoryRetrievalService,
+        ModelRouter,
+        PartnerMcpClient,
+        ProjectContext,
+        RunStatus,
+        WorkflowState,
+        build_shoot_day_plan_workflow,
+    )
+    from pinocut.agentplatform.corpus import load_manifest
+
+    try:
+        documents = load_manifest(args.corpus)
+    except (OSError, ValueError) as exc:
+        print(f"corpus error: {exc}", file=sys.stderr)
+        return 1
+
+    mcp = None
+    if args.mcp_endpoint:
+        token = os.environ.get(args.mcp_token_env)
+        if not token:
+            print(f"{args.mcp_token_env} is not set", file=sys.stderr)
+            return 1
+        mcp = PartnerMcpClient(
+            transport=HttpTransport(args.mcp_endpoint),
+            token_provider=lambda: token,
+        )
+
+    budget = BudgetGuard(cap_usd=args.budget_cap) if args.budget_cap > 0 else None
+    deps = AgentDeps(
+        retrieval=InMemoryRetrievalService(documents),
+        router=ModelRouter(budget=budget),
+        mcp=mcp,
+    )
+    orchestrator = build_shoot_day_plan_workflow(deps, structured_logs=args.structured_logs)
+    state = WorkflowState(
+        context=ProjectContext(
+            project_id=args.project_id,
+            user_id=args.user_id,
+            contour=Contour(args.contour),
+            script_version=args.script_version,
+        ),
+        goal=args.goal,
+    )
+
+    run = orchestrator.run(state)
+
+    print(f"Workflow: {run.workflow}")
+    print(f"Status: {run.status.value}" + (f" — {run.reason}" if run.reason else ""))
+    for entry in run.audit:
+        marker = "ok" if entry.ok else "FAIL"
+        warnings = f" ({'; '.join(entry.warnings)})" if entry.warnings else ""
+        print(f"  [{marker}] {entry.node}{warnings}")
+
+    if run.state.approval_request is not None:
+        request = run.state.approval_request
+        print(f"\nApproval required: {request.request_id} — {request.summary}")
+        for option in request.options:
+            risks = ", ".join(option.get("risks", [])) or "none"
+            print(f"  {option['optionId']}: score={option.get('score', 0)} risks={risks}")
+        print("Submit the decision through the producer UI — the CLI does not approve.")
+
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(
+            json.dumps(run.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"\nRun written to: {args.out}")
+
+    return 0 if run.status is not RunStatus.FAILED else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv[1:]
     if len(argv) >= 2 and argv[0] == "scene" and argv[1] in SCENE_SUBCOMMANDS:
         return main_scene(argv[1:])
+    if len(argv) >= 2 and argv[0] == "platform" and argv[1] in PLATFORM_SUBCOMMANDS:
+        return main_platform(argv[1:])
 
     args = parse_args(argv)
 
