@@ -97,7 +97,66 @@ On L40 the practical choices are:
 - **FP8 W8A8** — officially supported on Ada in vLLM, but community reports say it is not
   yet well optimized on L40S; AWQ is currently faster there
 - **AWQ / GPTQ INT4** — the pragmatic default for this fleet
-- **GGUF** — single-user local only; do not use it for a batched fleet
+- **GGUF (incl. Unsloth Dynamic UD-Q4_K_XL)** — excellent quality per byte, wrong engine
+  for a batched fleet. See § 4a, this deserves its own analysis.
+
+### 4a. Unsloth Dynamic quants and why Ada falls between the chairs
+
+The degradation figures in the original candidate comparison (≈1.0% at 4-bit) come from
+Unsloth Dynamic 2.0, and that quality claim holds up. Their methodology is sound — KL
+divergence rather than perplexity ("using perplexity is incorrect"), plus their own MMLU
+5-shot implementation built after finding that harness variations swing the same model
+from 35% to 68%. Dynamic 2.0 selects a quantization type per layer rather than applying
+one setting uniformly, keeping embeddings and the first/last attention blocks at higher
+precision while compressing the redundant middle FFN layers harder.
+
+The headline result: on Gemma 3 27B, **Unsloth Q4_K_XL scored 71.47% MMLU versus Google's
+own QAT checkpoint at 70.64% — better accuracy in a file 2 GB smaller.** KL divergence
+improves 3–8% over baseline imatrix quants. For Gemma 4 they go further and apply Dynamic
+on top of Google's QAT checkpoint (`unsloth/gemma-4-26B-A4B-it-qat-GGUF`), which is the
+best quality-per-byte 4-bit build available for that model.
+
+**The problem is format coverage, not quality.** Unsloth's catalog for Qwen3.6-27B:
+
+| Unsloth build | Target engine | Works on L40 (Ada)? |
+|---|---|---|
+| `Qwen3.6-27B-GGUF` (UD-Q4_K_XL etc.) | llama.cpp | yes, but wrong engine for a fleet |
+| `Qwen3.6-27B-UD-MLX-4bit/6bit`, `-MLX-8bit` | MLX / Apple Silicon | no |
+| `Qwen3.6-27B-NVFP4` | vLLM/SGLang on **Blackwell** | **no** — Ada lacks NVFP4 |
+| AWQ / GPTQ | vLLM | **not published** |
+
+So Unsloth Dynamic is optimized for precisely the three platforms this fleet is not:
+llama.cpp on consumer GPUs, Apple Silicon, and Blackwell. On Ada there is no
+high-throughput Unsloth path. The servable 4-bit/8-bit options are elsewhere: the official
+`Qwen/Qwen3.6-27B-FP8` (block size 128), or community AWQ builds such as the
+`cyankiwi/gemma-4-31B-it-AWQ-4bit` used in the vLLM benchmark above.
+
+**Serving GGUF under vLLM is not the escape hatch.** vLLM's GGUF path exists but is
+documented as useful mainly for CPU-offload and explicitly not recommended for GPU-first
+production; its GGUF throughput is below llama.cpp's own. vLLM also cannot yet resolve
+non-standard `UD-` quant prefixes via `repo_id:quant_type` (open issue #39469, April 2026),
+so Unsloth Dynamic files need manual handling even to load.
+
+**The throughput gap is what decides this.** Measured on Llama 3.1 8B FP16: vLLM's
+continuous batching sustains ~485 tok/s at 10 concurrent requests versus ~148 tok/s for the
+llama.cpp-based stack — 3.3×. At 50 concurrent it is ~920 vs ~155 tok/s, roughly 6×,
+because llama.cpp serializes through a FIFO queue while vLLM rebuilds the batch every
+iteration. Single-user, the gap nearly vanishes: llama.cpp with CUDA delivers ~90% of
+vLLM's speed at 35–60% of the VRAM.
+
+**Therefore the format choice splits by role, not by model:**
+
+- **Low-concurrency, quality-critical, long-context roles** — the Showrunner is one agent
+  handling one request at a time with the full script in context. Here Unsloth
+  UD-Q4_K_XL on llama.cpp is genuinely defensible: best-in-class accuracy per byte, lowest
+  VRAM, and the batching disadvantage never materializes at concurrency 1.
+- **High-concurrency roles** — N parallel scene writers, the router, the QC pass. Here AWQ
+  or FP8 on vLLM wins by 3–6×, and that dominates a ~1% quality difference completely.
+  Prefix caching (the shared script/lore prefix computed once across all agents) only
+  exists on the vLLM side, which widens the gap further in this specific workload.
+
+This is a genuinely mixed-engine fleet, and that is fine — the agents talk HTTP to a
+gateway and do not care which engine answers.
 
 Muse Glimmer at FP8 is **32.78 GB**, which on a 48 GB L40 leaves only ~15 GB — not the
 "~25 GB free" that the 4-bit figure implies. Only the 4-bit build (~17 GB) leaves real room
@@ -130,18 +189,24 @@ Weights at 4-bit, remainder available for KV and activations:
 Mapped onto the layered architecture (agents are CPU containers; only inference servers and
 diffusion workers hold GPUs):
 
-- **Showrunner / story reasoning** — **Qwen3.6-27B**. Highest independent-ish scores in the
-  class (GPQA 87.8, SWE-bench Verified 77.2, MMLU-Pro 86.2), hybrid linear attention keeps
-  long-script KV tractable, Apache 2.0, and mature vLLM support. This is the brain.
-- **Scene writers (N parallel replicas)** — **Gemma 4 26B A4B**. 4 GB active compute per
-  token and a 5.2 GiB KV ceiling means the highest concurrency per card of anything here.
-  Its lower Intelligence Index (31) is acceptable because scene agents work from a compressed
-  brief, not the full lore.
+- **Showrunner / story reasoning** — **Qwen3.6-27B**, served as **Unsloth UD-Q4_K_XL on
+  llama.cpp**. Highest scores in the class (GPQA 87.8, SWE-bench Verified 77.2, MMLU-Pro
+  86.2), hybrid linear attention keeps long-script KV tractable, Apache 2.0. This role runs
+  at concurrency 1, so llama.cpp's batching weakness costs nothing and Unsloth Dynamic's
+  accuracy-per-byte advantage is free (§ 4a). This is the brain.
+- **Scene writers (N parallel replicas)** — **Gemma 4 26B A4B**, served as **AWQ on vLLM
+  ≥ 0.21.0**. 4B active params and a 5.2 GiB KV ceiling give the highest concurrency per
+  card of anything here; continuous batching plus prefix caching over the shared lore
+  prefix is exactly this role's bottleneck. Its lower Intelligence Index (31) is acceptable
+  because scene agents work from a compressed brief, not the full lore.
 - **Router / JSON validator / ComfyUI call-fixer** — **Nemotron 3 Nano Omni 30B-A3B**
-  (~323 tok/s, fastest measured) or Gemma 4 E4B. Index 15 is fine for structured dispatch.
+  (~323 tok/s, fastest measured) or Gemma 4 E4B, on vLLM. Index 15 is fine for structured
+  dispatch.
 - **Continuity / storyboard QC (vision)** — **Muse Glimmer 30B** for its 1.8B ViT-G/14
   perception encoder (4,096 visual tokens/image, ScreenSpot Pro 75.4, Charxiv 78.8), or
-  Nemotron Omni if audio and video input matter more than reasoning depth.
+  Nemotron Omni if audio and video input matter more than reasoning depth. Note that
+  Muse Glimmer's Ada story is the weakest of the set: NVFP4 is Blackwell-only, FP8 costs
+  32.78 GB, and Ada is absent from the official vLLM recipe's tested hardware.
 - **Gemma 4 31B** — hold. It is beaten by Qwen3.6-27B on most published benchmarks while
   using more VRAM for KV. Its token efficiency is real but does not outweigh that here.
 
@@ -153,6 +218,12 @@ diffusion workers hold GPUs):
    on Ada is recent and unquantified.
 3. Pin vLLM ≥ 0.21.0 in the serving image and record the version in the AgentCard.
 4. Measure DFlash speedup on Ada if Muse Glimmer is selected; no published number exists.
+5. Measure the actual quality delta between Unsloth UD-Q4_K_XL and the AWQ build of the
+   same model on a PinoCut eval. The ~1% figure is Unsloth's own MMLU number on a different
+   model generation; if the real gap on story reasoning is negligible, the Showrunner can
+   move to vLLM too and the fleet becomes single-engine.
+6. Watch vLLM issue #39469 — if `UD-` prefix loading lands and GGUF throughput improves,
+   the mixed-engine split in § 4a collapses into one stack.
 
 ## 8. Sources
 
@@ -171,4 +242,11 @@ diffusion workers hold GPUs):
 - [vLLM quantization docs (FP8 W8A8, Ada/Hopper support)](https://docs.vllm.ai/en/latest/features/quantization/)
 - [NVIDIA: introducing NVFP4](https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/) — Blackwell-only
 - [Artificial Analysis: Nemotron 3 Nano Omni 30B-A3B](https://artificialanalysis.ai/models/nemotron-3-nano-omni-30b-a3b)
+- [Unsloth Dynamic 2.0 GGUFs](https://unsloth.ai/docs/basics/unsloth-dynamic-2.0-ggufs) — per-layer quant selection, KLD methodology, MMLU vs Google QAT
+- [Unsloth Dynamic v2.0 announcement](https://unsloth.ai/blog/dynamic-v2)
+- [unsloth/Qwen3.6-27B-GGUF](https://huggingface.co/unsloth/Qwen3.6-27B-GGUF) · [unsloth/Qwen3.6-27B-NVFP4](https://huggingface.co/unsloth/Qwen3.6-27B-NVFP4) · [unsloth/gemma-4-26B-A4B-it-qat-GGUF](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF) — format coverage
+- [Qwen/Qwen3.6-27B-FP8](https://huggingface.co/Qwen/Qwen3.6-27B-FP8) — official Ada-servable build
+- [vLLM issue #39469: non-standard GGUF quant prefixes (UD-)](https://github.com/vllm-project/vllm/issues/39469)
+- [vLLM vs llama.cpp benchmarks (2026)](https://markaicode.com/benchmarks/vllm-vs-llamacpp-performance/) · [Ollama vs vLLM throughput at concurrency](https://www.sitepoint.com/ollama-vs-vllm-performance-benchmark-2026/)
+- [GGUF vs AWQ vs GPTQ guide (2026)](https://fungies.io/llm-quantization-gguf-awq-gptq-guide-2026/) — GGUF-in-vLLM caveat
 - [GMI Cloud: open-weight benchmarks, August 2026](https://www.gmicloud.ai/en/blog/ai-model-benchmarks-august-2026-open-weight-models-catch-the-frontier)
