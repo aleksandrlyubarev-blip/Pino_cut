@@ -60,6 +60,41 @@ Compatibility is otherwise good: *"Standard PyTorch, vLLM, ComfyUI and custom in
 containers deploy without modification; TensorRT engines should be compiled for Ada
 (sm_89)."* Our whole stack is vLLM + ComfyUI, so nothing needs rewriting.
 
+### 2a. Why the missing interconnect costs us nothing
+
+L40/L40S have no NVLink; multi-GPU work falls back to PCIe Gen 4 x16 (~64 GB/s bidirectional
+aggregate) against H100's 900 GB/s NVLink. That gap is why L40 clusters are built for
+distributed inference rather than foundation-model training — and it is a large part of why
+this capacity costs $0.79/hr.
+
+**Our workload is indifferent to it.** The pipeline is embarrassingly parallel throughout:
+each diffusion worker renders an independent shot, each LLM replica serves independent agent
+requests, and every model was deliberately sized to fit a single card. Inter-GPU bandwidth
+matters for exactly two things — training foundation models from scratch, and tensor-parallel
+inference of a model too large for one card — and neither is on the roadmap. Even LoRA
+training, the main argument for self-hosting at all, fits comfortably on one card.
+
+So the absence of NVLink is the arbitrage, not a limitation: anyone needing a 200B model or
+from-scratch training is forced onto H100 at 5–10× the hourly cost.
+
+Two corrections worth recording, since general L40 clustering write-ups state both features
+more confidently than the vendor documentation does:
+
+- **PCIe P2P on these cards is a hazard, not a feature.** NVIDIA's data-centre driver release
+  notes document that L40, L40S, L20, L4 and RTX PRO 6000 Blackwell Server Edition rely on the
+  host platform to preserve ordering of GPU-initiated posted PCIe transactions targeting a
+  peer GPU. Platforms based on Intel Sapphire Rapids and later do not guarantee this, and
+  GPUDirect P2P there can cause **run-time silent data corruption**. Disable it unless the
+  exact platform is known-good.
+- **GPUDirect RDMA on L40S works but with friction.** No DMA_BUF registration
+  (`CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED` returns false), so it needs the older
+  `nvidia-peermem` module — which is broken on Linux ≥ 6.8. It is validated in specific
+  configurations, not plug-and-play.
+
+**Forward risk to note.** "A model must fit within a single instance" has no escape hatch. If
+a future LTX release outgrows 48 GB, or we later want a 70B Director, splitting across cards
+is not available here — the response would be to change model or change provider.
+
 ## 3. Option A vs Option B for our workload
 
 Their 720p video endpoint is **$0.025 per output-second** — identical to the third-party Grok
@@ -236,3 +271,5 @@ the engineering team" is credible at this company size in a way it is not at a h
    capacity?
 7. Is the fleet owned, leased, or accessed through a partner cloud — and what happens to
    partner capacity if consumer traffic spikes (§ 8)?
+8. Which host platform are the L40 instances on, and is GPUDirect P2P disabled? (§ 2a — on
+   Sapphire Rapids and later it risks silent data corruption.)
