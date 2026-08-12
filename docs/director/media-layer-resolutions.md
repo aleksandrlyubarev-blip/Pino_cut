@@ -166,7 +166,42 @@ The L40 has FP8.
 **Revisit this if** the target moves to 4K, or two LTX instances must share one card, or the
 fleet moves to 24 GB cards. None applies today.
 
-## 9. Caveats
+## 9. Decision: LTX-2.5 over Wan, on hardware and trajectory grounds
+
+**For self-hosting, Wan is frozen at 2.2.** Wan 2.5, 2.6 and 2.7 all shipped API-only;
+Alibaba's open weights stop at 2.2, while Lightricks keeps releasing LTX openly. The
+comparison for this fleet is a two-day-old model against one that stopped evolving.
+
+**Wan 2.2 14B does not fit an L40 at our target resolution:**
+
+| Model | 720p | 1080p |
+|---|---|---|
+| **LTX-2.5** | ~24–27 GB | ~29–34 GB |
+| Wan 2.2 14B (FP8) | **65–80 GB** | higher |
+| Wan 2.2 14B @ 480p | 40–48 GB | — |
+| Wan 2.2 TI2V-5B | ~24 GB | — |
+
+Only the 5B variant fits, and it is a third the size. The gap is mechanical, not incidental:
+LTX's VAE compresses 32×32×8 (1:192 total, 1:8192 pixels-to-tokens) against Wan 2.2's
+4×4×16. Eight times less spatial compression per axis means roughly 64× more spatial latent
+positions at equal resolution — which is simultaneously why Wan needs an order of magnitude
+more VRAM, why it is 4–5× slower (a 5 s 720p clip: 4–5 min vs under 1 min), and why the
+token arithmetic in § 3 works out as small as it does.
+
+**Where Wan genuinely wins: motion.** Motion-stability 8.7 vs LTX's 7.9, with better anatomy
+and faces — reviewers describe a physical weight to movement that LTX lacks. That is the
+price of 1:192 compression, and it is the one axis where our choice is the weaker model.
+
+**Verdict:** LTX-2.5, decisively, but for hardware and trajectory reasons rather than
+picture quality. The honest corollary: if cinematic motion realism becomes the top priority,
+the best open alternative needs a bigger card than we have and the best options overall are
+closed APIs. Self-hosting on 48 GB means accepting 7.9-class motion.
+
+**Caveat:** every head-to-head above is LTX-2.3 vs Wan 2.2. Nobody has benchmarked LTX-2.5
+(released 2026-08-10), and Wan 2.7 has no Artificial Analysis or VBench entry — only
+Alibaba's own Wan-Bench.
+
+## 11. Caveats
 
 1. Every VRAM and timing figure here is measured on **LTX-2.3**, mostly on RTX 5090. Nothing
    equivalent has been published for LTX-2.5 (released 2026-08-10). The VAE geometry and the
@@ -176,7 +211,7 @@ fleet moves to 24 GB cards. None applies today.
 3. `fp8-cast` on Ada may or may not hit hardware FP8 matmul — open question from
    `model-benchmarks-2026-08.md` § 4. Affects speed, not whether it fits.
 
-## 10. Sources
+## 12. Sources
 
 - [Lightricks/LTX-2 (GitHub)](https://github.com/Lightricks/LTX-2) — VAE shape, `fp8-cast`, `--offload`, decoder choice
 - [LTX-2: Efficient Joint Audio-Visual Foundation Model (arXiv 2601.03233)](https://arxiv.org/html/2601.03233v1)
