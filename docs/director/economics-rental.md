@@ -74,6 +74,60 @@ Renting suits **steady** load poorly: a card under continuous use costs $7,008/y
 $0.80/hr, which is roughly its purchase price. If the Director's inference server ends up
 running 24/7, that one is the candidate to buy; the diffusion workers stay rented.
 
+## 4a. Consumer and AMD alternatives to the L40
+
+| Card | VRAM | Rental | Availability |
+|---|---|---|---|
+| **RTX 5090** | **32 GB** | **$0.27–0.60/hr** (spot from ~$0.09) | Vast.ai, ~12 providers |
+| L40 / L40S | 48 GB | $0.40 (Vast spot) – $0.79 | Vast, RunPod, WOMBO |
+| AMD MI300X | 192 GB | $1.85–3.49/hr | Thunder Compute, CoreWeave, RunPod |
+| AMD W7900 | 48 GB | effectively not rented | — |
+
+**The RTX 5090 is faster than the L40, and our own benchmark proves it.** Every LTX timing in
+`media-layer-resolutions.md` originates from a 5090 measurement — 97 frames at 1280×704 with
+audio in ~50 s, 24.2 GB peak — which we then scaled *down* by memory bandwidth to estimate
+L40 performance. The 5090 is Blackwell: ~1792 GB/s against the L40's 864 GB/s, and it supports
+**NVFP4**, the format we ruled out twice for Ada (both for LTX and for Unsloth's quants). So it
+wins on price per unit of work twice over: cheaper per hour *and* faster per clip.
+
+**But 32 GB is a wall, and it falls in the wrong place:**
+
+| Workload | Requires | RTX 5090 (32 GB) |
+|---|---|---|
+| LTX 720p, 5 s, encoder offloaded | 24.2 GB (measured) | **fits**, ~7 GB spare |
+| LTX 1080p direct | ~29–34 GB | **marginal to no** |
+| LTX 20-second clip | 3.8× the latent tokens | **no** |
+| Director, Qwen3.6-27B-FP8 | 31 GB + KV | **no** |
+
+§ 5 of `media-layer-resolutions.md` concluded that final shots should be sampled natively at
+1080p. That is precisely what the 5090 cannot hold.
+
+**AMD is the wrong economics here.** MI300X costs 2.5–4× the L40 hourly rate to deliver 192 GB
+we do not need — everything was deliberately sized under 48 GB. The W7900 (48 GB) is a
+workstation purchase, not a rental SKU. Software has improved (ComfyUI Desktop gained official
+ROCm support in v0.7.0, January 2026, and AMD publishes text-to-video tutorials for Radeon),
+but LTX's own optimisations — `fp8-cast`, NVFP4 — target NVIDIA, and there is no published
+data on LTX-2.5 under ROCm at all. Risk without compensating benefit.
+
+### Recommended split: by tolerance for interruption
+
+| Stage | Card | Rationale |
+|---|---|---|
+| Draft takes, 720p, selection | **RTX 5090 spot** | ~2× faster, ~2× cheaper, 720p fits; an eviction costs one re-run |
+| Final shots at 1080p/1440p, long clips | **L40 48 GB** | needs the VRAM and the reliability |
+| Director LLM | **L40 48 GB** | 31 GB resident plus KV, and needs a persistent process |
+
+Draft-pass arithmetic: 400 takes at ~1 min on a 5090 is 6.7 GPU-hr × $0.40 = **$2.67**, against
+400 at ~2 min on an L40 = 13.3 GPU-hr × $0.79 = **$10.53**. Trivial in absolute terms, but the
+**4× ratio holds at any scale**, and drafts are the dominant volume (§ 3).
+
+**The balancing caveat.** RTX 5090 capacity on marketplaces is largely private individuals'
+home machines: no ECC, no uptime SLA, spot reclaimed on 15 seconds' notice — the reason those
+platforms publish per-host reliability scores. Fine for drafts, where a lost clip costs a
+re-run. Not fine for a 20-second `extend` chain on an approved shot, where an eviction loses
+the whole sequence. That is why the split above is drawn on interruption tolerance, not on
+VRAM alone.
+
 ## 5. Teaching video generation on rented capacity
 
 The economics are unusually favourable, because student workloads are bursty and small.
@@ -128,3 +182,11 @@ $0.80/hour is only the headline. What routinely breaks rental economics:
 5. **The wall-time estimate.** Everything in § 2 scales off the unmeasured ~2 min/clip
    figure. One benchmark run on a rented card replaces the whole table with real numbers —
    do that before signing anything.
+
+## 8. Sources
+
+- [Vast.ai RTX 5090 pricing](https://vast.ai/pricing/gpu/RTX-5090) · [RTX 5090 across 12+ providers](https://getdeploying.com/gpus/nvidia-rtx-5090) · [GPU Finder: RTX 5090](https://gpufinder.dev/gpu/rtx-5090)
+- [Vast.ai L40S pricing](https://vast.ai/pricing/gpu/L40S) · [RunPod vs Lambda vs CoreWeave](https://www.buildmvpfast.com/blog/gpu-cloud-cost-comparison-runpod-lambda-labs-coreweave-2026)
+- [MI300X cloud pricing](https://gpufinder.dev/gpu/mi300x) · [AMD MI300X/MI355X pricing 2026](https://www.spheron.network/blog/amd-mi300x-mi355x-pricing-2026/) · [Radeon PRO W7900 pricing](https://www.notebookcheck.net/AMD-Radeon-Pro-W7900-Dual-Slot-gets-500-price-cut-up-to-52-better-perf-per-dollar-compared-to-RTX-6000-Ada.843500.0.html)
+- [ComfyUI on AMD ROCm](https://rocm.blogs.amd.com/artificial-intelligence/comfyui/README.html) · [Text-to-video with ComfyUI on Radeon](https://rocm.docs.amd.com/projects/ai-developer-hub/en/latest/notebooks/inference/t2v_comfyui_radeon.html) · [AMD GPUs for AI inference in 2026](https://idfs.ai/blog/amd-gpus-for-ai-inference-2026)
+- [RTX 5090 LTX-2.3 benchmark report](https://huggingface.co/datasets/witcheer/rtx-5090-benchmarks/blob/main/reports/ltx-2.3.md)
