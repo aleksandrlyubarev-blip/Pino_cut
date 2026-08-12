@@ -293,7 +293,82 @@ production-shaped load" rather than best-case — companies that massage numbers
 that. The pricing is genuinely competitive, motivated sellers usually are, and "direct line to
 the engineering team" is credible at this company size in a way it is not at a hyperscaler.
 
-## 9. Questions to send back
+## 9. Market position, capacity origin, and failover options
+
+### 9.1 The price is market rate, not a discount
+
+| Provider | Card | Price |
+|---|---|---|
+| **Vast.ai** | L40S 48 GB | **$0.40/hr** (spot marketplace) |
+| **RunPod** | L40S 48 GB | **$0.79/hr** |
+| **WOMBO** | L40 48 GB | **$0.79/hr** |
+| Spheron | L40S 48 GB | ~$0.96/hr |
+
+RunPod charges the same for the **L40S** — same 48 GB, but higher clocks, 350 W against 300 W,
+and better FP8 throughput. Identical money for strictly faster silicon, self-serve, no
+partner conversation required. Vast.ai is half the price, with the marketplace caveat that
+spot instances are reclaimed on 15 seconds' notice with no uptime SLA.
+
+**WOMBO has no pricing advantage.** They may win on service — direct engineering contact,
+deployment help — but not on cost, which materially weakens the case for accepting sub-tenancy
+risk (§ 8).
+
+### 9.2 When the capacity was likely contracted, and why it matters
+
+Reconstruction: L40 shipped late 2022, L40S in August 2023. WOMBO's consumer peak was
+2022–23. They partnered with io.net (a decentralized GPU network) in April 2024, then raised
+in September 2024 **with NVIDIA and CoreWeave participating**.
+
+That round is textbook **circular financing** — suppliers investing in a customer who then
+spends the proceeds on their chips and cloud. The same period saw NVIDIA invest $2B in
+CoreWeave to become its second-largest shareholder, CoreWeave revenue go from $15,800 (2022)
+to $1.9B (2024), and NVIDIA underwrite unused-capacity guarantees through 2032.
+
+GPU contracts signed in 2023–24 ran two to three years at scarcity pricing, typically
+take-or-pay. A 2024 signing expires around 2027. **The entire partner offering reads as
+monetisation of an under-used commitment** — the bill arrives regardless, so recovering some
+of it is rational.
+
+**Consequence: this pricing has an expiry date we cannot see.** Question 10 in § 10 (term of
+their commitment to the underlying provider) is the single most valuable answer to obtain.
+A further signal, August 2026: credit investors demanded covenants after CoreWeave's spread
+widened 125 basis points. If the capacity sits on CoreWeave, that is another link in the chain.
+
+### 9.3 How far a startup scales on this pricing
+
+One card yields ~150 seconds of generated video per hour; at a 4:1 take ratio that is
+**~37 seconds of keeper footage per GPU-hour**, or ~$0.021 per delivered second.
+
+| Monthly output | GPU-hours | Cost |
+|---|---|---|
+| 10 minutes finished | ~16 | **$13** |
+| 1 hour | ~97 | **$77** |
+| 10 hours | ~970 | **$766** |
+| 103 hours (reaches the $0.60 volume tier) | 10,000 | $7,900 |
+
+**Cost stops being the constraint long before anything else does** — roughly a 100× growth
+runway from pilot scale.
+
+The real ceiling is **concurrency**, not money. Delivering 10 finished hours in a month needs
+~970 GPU-hours against 720 hours in the month: impossible on one card, requiring 2–3
+continuously or bursts of twenty. That is precisely where "no guaranteed reservations" bites —
+not on price, but on obtaining twenty cards on the day they are needed.
+
+### 9.4 Failover options
+
+Plentiful, which makes the multi-homing recommendation practical rather than theoretical:
+
+- **Direct substitutes (per-GPU-hour):** RunPod, Vast.ai, Spheron, Hyperstack, DataCrunch,
+  TensorDock, Massed Compute, Crusoe
+- **Serverless containers, closest to WOMBO's model:** Modal, Replicate, Baseten, fal.ai
+  (the last specialising in image and video)
+- **Enterprise:** CoreWeave, Lambda, Together
+
+Because our workload is containerised and serverless-shaped, migration is largely a
+configuration change — RunPod, Modal and Replicate all accept containers on the same terms.
+The gateway in `serving-l40.md` § 4 already abstracts the endpoint.
+
+## 10. Questions to send back
 
 1. Can an Option B deployment be pinned to a minimum of one always-on instance, so a vLLM
    server retains its KV/prefix cache between requests?
@@ -314,3 +389,12 @@ the engineering team" is credible at this company size in a way it is not at a h
     that commitment?
 11. Is 3,600 owned inventory or a pool ceiling? Why is the figure identical for both the
     48 GB and 24 GB tiers?
+
+## 11. Sources
+
+- *WOMBO Inference — Provider Overview*, July 2026 (partner document, supplied by the user)
+- [Vast.ai L40S pricing](https://vast.ai/pricing/gpu/L40S) · [RunPod vs Lambda vs CoreWeave pricing](https://www.buildmvpfast.com/blog/gpu-cloud-cost-comparison-runpod-lambda-labs-coreweave-2026) · [Cloud GPU rental guide 2026](https://www.promptquorum.com/power-local-llm/cloud-gpu-rental-guide-2026)
+- [BetaKit — Round13/NVIDIA-backed Wombo raises $12.2M CAD](https://betakit.com/round13-nvidia-backed-wombo-announces-12-2-million-cad-to-launch-more-generative-ai-apps/) · [CO/AI — $9M for a decentralized supercomputer](https://getcoai.com/news/ai-startup-wombo-secures-9m-to-build-decentralized-supercomputer/)
+- [w.ai](https://w.ai/) · [io.net × WOMBO partnership](https://cryptodaily.co.uk/2024/04/ionet-partners-with-ai-startup-wombo-to-enhance-computing-power-for-its-machine-learning-models)
+- [Circular financing in AI infrastructure](https://io-fund.com/ai-stocks/nvidia-coreweave-nebius-circular-financing-gpu-boom) · [CoreWeave S-1 breakdown](https://www.mostlymetrics.com/p/coreweave-ipo-s1-breakdown) · [CoreWeave credit spread widening, Aug 2026](https://www.techtimes.com/articles/322772/20260803/ai-loan-investors-demand-covenants-after-coreweave-spread-blows-out-125-points.htm)
+- [NVIDIA Data Center GPU Driver release notes — PCIe P2P ordering](https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-570-124-06/index.html) · [Does L40S support GPUDirect? (NVIDIA forums)](https://forums.developer.nvidia.com/t/does-l40s-support-gpudirect/288105)
