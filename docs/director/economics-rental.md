@@ -109,13 +109,50 @@ ROCm support in v0.7.0, January 2026, and AMD publishes text-to-video tutorials 
 but LTX's own optimisations — `fp8-cast`, NVFP4 — target NVIDIA, and there is no published
 data on LTX-2.5 under ROCm at all. Risk without compensating benefit.
 
+### 4b. The NVFP4-on-32GB vs FP8-on-48GB fork is a false one
+
+The obvious counter-argument to the 32 GB wall is NVFP4: on Blackwell, 4-bit weights would
+roughly halve the DiT and bring 1080p back into range on a 5090. Three measurements say not
+to take that trade.
+
+- **"NVFP4 shrinks a video model 33% — with zero speed gain"** (DGX Spark benchmark). The
+  cause is the one established in `media-layer-resolutions.md` § 8: video diffusion is
+  compute-bound, so weight-only quantization shrinks the file and leaves throughput alone.
+- **"RTX 5090 NVFP4 quantization tested: T2V and I2V quality completely different"** —
+  degradation is mode-dependent and unpredictable.
+- Head-to-head on FLUX: *FP8 scaled holds quality with almost no degradation, while NVFP4
+  degrades*; FLUX Dev under NVFP4 is described as "low quality at the moment".
+
+NVFP4's advertised ~1.9× over FP8 is an LLM result; it does not reproduce on video. **So the
+trade is quality paid for VRAM, with nothing returned.** Corollary: even when drafting on a
+5090, run **FP8, not NVFP4** — 720p in FP8 is the measured 24.2 GB and fits 32 GB comfortably.
+NVFP4 solves a problem we do not have.
+
+### 4c. The card that dissolves the fork
+
+| Card | VRAM | Arch | Rental |
+|---|---|---|---|
+| **RTX PRO 6000 Blackwell** | **96 GB** | Blackwell | **$0.63–0.67** (Vast) · $1.69–2.09 (RunPod) · median ~$1.73–2.20 |
+| L40 | 48 GB | Ada | $0.79 |
+| RTX 5090 | 32 GB | Blackwell | $0.27–0.60 |
+
+96 GB of Blackwell, on marketplace tiers **cheaper than the L40** — Vast lists the Server
+Edition at $0.63 and Workstation at $0.67, packet.ai at $0.66. This removes the need to choose
+between NVFP4-on-32 and FP8-on-48: run **FP8 on 96 GB**, on faster silicon, for less. Twice
+the headroom needed even for 20-second clips at 1440p, with no quantization compromise.
+
+Caveats that keep it honest: $0.63–0.67 is marketplace spot pricing carrying the same
+eviction risk as the 5090 tier; the reliable providers charge $1.69–2.09, roughly double the
+L40. Availability is also thinner and newer — the card only reached clouds from late 2025.
+
 ### Recommended split: by tolerance for interruption
 
-| Stage | Card | Rationale |
-|---|---|---|
-| Draft takes, 720p, selection | **RTX 5090 spot** | ~2× faster, ~2× cheaper, 720p fits; an eviction costs one re-run |
-| Final shots at 1080p/1440p, long clips | **L40 48 GB** | needs the VRAM and the reliability |
-| Director LLM | **L40 48 GB** | 31 GB resident plus KV, and needs a persistent process |
+| Stage | Card | Format | Rationale |
+|---|---|---|---|
+| Draft takes, 720p, selection | **RTX 5090 spot** | **FP8** | ~2× faster, ~2× cheaper, 24.2 GB fits 32; an eviction costs one re-run |
+| Final shots 1080p/1440p, long clips | **RTX PRO 6000 96 GB** at ~$0.65 | FP8 | dissolves the VRAM question entirely (§ 4c) |
+| Same, when reliability is required | L40 48 GB ($0.79), or RTX PRO 6000 on RunPod | FP8 | SLA-backed capacity |
+| Director LLM | L40 or RTX PRO 6000 | FP8 | 31 GB resident plus KV, needs a persistent process |
 
 Draft-pass arithmetic: 400 takes at ~1 min on a 5090 is 6.7 GPU-hr × $0.40 = **$2.67**, against
 400 at ~2 min on an L40 = 13.3 GPU-hr × $0.79 = **$10.53**. Trivial in absolute terms, but the
@@ -185,6 +222,8 @@ $0.80/hour is only the headline. What routinely breaks rental economics:
 
 ## 8. Sources
 
+- [Vast.ai RTX PRO 6000 S](https://vast.ai/pricing/gpu/RTX-PRO-6000-S) · [RTX PRO 6000 WS](https://vast.ai/pricing/gpu/RTX-PRO-6000-WS) · [RTX PRO 6000 across 30+ providers](https://getdeploying.com/gpus/nvidia-rtx-pro-6000) · [Thunder Compute RTX PRO 6000 pricing, Aug 2026](https://www.thundercompute.com/blog/nvidia-rtx-pro-6000-pricing)
+- [NVFP4 shrinks a video model 33% with zero speed gain](https://ai-muninn.com/en/blog/dgx-spark-sulphur-nvfp4-video) · [RTX 5090 NVFP4 tested: T2V vs I2V quality](https://zenn.dev/toki_mwc/articles/rtx5090-nvfp4-quantization-reality?locale=en) · [BF16 vs GGUF vs FP8 scaled vs NVFP4 quality](https://github.com/FurkanGozukara/Stable-Diffusion/discussions/357)
 - [Vast.ai RTX 5090 pricing](https://vast.ai/pricing/gpu/RTX-5090) · [RTX 5090 across 12+ providers](https://getdeploying.com/gpus/nvidia-rtx-5090) · [GPU Finder: RTX 5090](https://gpufinder.dev/gpu/rtx-5090)
 - [Vast.ai L40S pricing](https://vast.ai/pricing/gpu/L40S) · [RunPod vs Lambda vs CoreWeave](https://www.buildmvpfast.com/blog/gpu-cloud-cost-comparison-runpod-lambda-labs-coreweave-2026)
 - [MI300X cloud pricing](https://gpufinder.dev/gpu/mi300x) · [AMD MI300X/MI355X pricing 2026](https://www.spheron.network/blog/amd-mi300x-mi355x-pricing-2026/) · [Radeon PRO W7900 pricing](https://www.notebookcheck.net/AMD-Radeon-Pro-W7900-Dual-Slot-gets-500-price-cut-up-to-52-better-perf-per-dollar-compared-to-RTX-6000-Ada.843500.0.html)
