@@ -43,6 +43,18 @@ There is no 16:9, 32-aligned rung at 720p. If deliverables must be exactly 16:9,
 
 ## 3. Latent token counts at 121 frames (F' = 16)
 
+> **Scope warning.** Everything in this document is computed at **121 frames — about 5
+> seconds**, the figure used in the model card examples. LTX-2.5's actual ceiling is **20
+> seconds** (480 frames at 24 fps, with context + duration ≤ 505 frames). At 481 frames
+> `F' = 61`, so latent tokens are **3.8× everything tabulated below**, and the output tensor
+> reaches 6 GB at 1080p and 10.6 GB at 1440p. The sizing verdicts in § 6 do **not** carry
+> over to 20-second clips unaltered.
+>
+> What keeps this bounded is that LTX exposes a dedicated `extend` endpoint and expresses its
+> limit as *context + duration* — long clips are assembled by extension with context rather
+> than one monolithic generation, so peak memory need not scale with total runtime. Verify
+> this on the spare card before planning around long-form output.
+
 Latent tokens = `F' × (H/32) × (W/32)`. This is the number the DiT actually attends over:
 
 | Resolution | Grid | Latent tokens | vs 720p |
