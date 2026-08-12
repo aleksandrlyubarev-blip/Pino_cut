@@ -206,11 +206,47 @@ Four structural reasons, in descending order of how benign they are:
 4. **Hardware-vendor investors.** With NVIDIA and CoreWeave on the cap table, GPU access is
    favourable — and it is easy to end up provisioned beyond what the consumer product needs.
 
-**The arithmetic worth raising with them.** 3,600 cards against ~$15M raised: L40 48GB runs
-$7–9K each, so 3,600 units is ~$25M of hardware — more than the company has ever raised.
-The fleet is therefore almost certainly not owned outright but leased, financed, or accessed
-through CoreWeave. That is a chain of dependencies rather than a balance-sheet asset, and it
-is a fair question to ask directly.
+**The arithmetic worth raising with them.** Two independent calculations reach the same place.
+
+*Capital.* L40 48GB runs $7–9K each, so 3,600 units is ~$25M of hardware — more than the
+company has ever raised (~$15M).
+
+*Physics.* 3,600 cards is ~450 eight-GPU servers. Power, not rack units, is the binding
+constraint:
+
+```
+8 × 300 W (L40 TDP)                                    = 2,400 W
+2 CPUs, RAM, NICs, fans, PSU inefficiency             ≈ 1,300–1,600 W
+                                                        ─────────────
+per 8-GPU node                                        ≈ 3.7–4 kW
+450 nodes                                             ≈ 1.7 MW IT load
+with cooling at PUE 1.3–1.5                           ≈ 2.2–2.5 MW facility draw
+```
+
+Rack count follows from the power budget per rack: ~180 racks at a conventional 10 kW/rack,
+~90 at 20 kW, ~45 at 40 kW (AI-ready with rear-door heat exchangers), and only ~24–38 in a
+50–70 kW liquid-cooled hall. Realistic range: **40–90 racks**.
+
+A 2.5 MW hall with dozens of racks needs facilities engineers, network staff, hardware techs
+handling RMAs (at 3,600 GPUs, failures are weekly) and a 24/7 NOC — dozens of people on site
+alone. **WOMBO has about ten employees, six of them co-founders.** They neither built nor
+operate this. The most parsimonious reading is capacity contracted from CoreWeave — investor
+and GPU cloud both — sized for the consumer peak and resold when unused.
+
+*Two details consistent with that reading.* The document says "3,600 **shown in pool**", not
+"we own 3,600" — reseller phrasing for a view into someone else's inventory. And the identical
+figure appears for **both** tiers, L40 48GB and L40G 24GB; an exact coincidence in owned
+inventory is implausible, while a pool ceiling or display artefact explains it naturally.
+
+*Note what they did not need to build.* With no cross-instance fabric (§ 2a), the networking
+is ordinary datacentre Ethernet — roughly 900 links across ~20–30 leaf switches plus spine.
+No InfiniBand, no rail-optimised topology. That is entirely consistent with an inference farm
+rather than a training cluster, and it is the cheap part of the estate.
+
+**Consequence:** we would be a sub-tenant of a sub-tenant. Capacity depends not only on
+WOMBO's own consumer load but on their contract with the underlying provider remaining in
+force. "We do not sell guaranteed reservations" reads literally — you cannot guarantee what
+you do not own.
 
 **What this means for us.** "We do not sell guaranteed reservations" reads differently in this
 light: our capacity is residual by construction — we get what the consumer products are not
@@ -273,3 +309,8 @@ the engineering team" is credible at this company size in a way it is not at a h
    partner capacity if consumer traffic spikes (§ 8)?
 8. Which host platform are the L40 instances on, and is GPUDirect P2P disabled? (§ 2a — on
    Sapphire Rapids and later it risks silent data corruption.)
+9. Which datacentres and regions hosts the capacity?
+10. Is the hardware owned, leased, or contracted from a provider — and what is the term of
+    that commitment?
+11. Is 3,600 owned inventory or a pool ceiling? Why is the figure identical for both the
+    48 GB and 24 GB tiers?
