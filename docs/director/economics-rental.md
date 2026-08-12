@@ -215,46 +215,60 @@ takes per pass, final renders, and anything needing LoRA or continuity. The boun
 neither quality nor price but **quantity — under ~10 clips/day, subscription; above it, own
 capacity.**
 
-### 4e. If the seat is SuperGrok Heavy (a $100/month bill)
+### 4e. At a standing $100/month seat (SuperGrok Plus)
 
-**$100/month is the promotional rate.** SuperGrok Heavy lists at **$300/month**, with ~$99 for
-the first three months. Confirm the promo end date in billing — the bill triples on schedule.
+> Corrected: an earlier draft assumed $100 was the promotional rate on SuperGrok Heavy. xAI
+> has since added a **SuperGrok Plus** tier above standard SuperGrok, and the introductory
+> discount is gone — $100/month is a standing cost. Published tier documentation lags this
+> change; the account is the authority.
 
-**At Heavy's quota the throughput argument in § 4d largely evaporates.** Reported allowance is
-**500 renders/day** against 50 on Premium and 100 on Premium+:
+**$100/month is $1,200/year.** What that buys in rented capacity:
 
-| | 400 generations |
+| | For $1,200/year |
 |---|---|
-| Heavy at 500/day | **under one day** |
-| $30 tier at a real 10–15/day | 33 days |
+| RTX PRO 6000 at $0.65/hr | ~1,850 GPU-hr → **~110,000 clips** (at 1 min each) |
+| RTX 5090 spot at $0.40/hr | ~3,000 GPU-hr → **~180,000 clips** |
+| Subscription (if Plus allows 100–300/day) | 36,500 – 110,000 clips |
 
-Caveat: xAI's stated quotas and observed throughput diverge — the $30 tier advertises 50/day
-against user reports of 10–15 before throttling. Whether Heavy has the same gap is
-undocumented. **The account holder can measure this directly**, and that observation beats any
-published estimate.
+**At this price it is roughly a wash.** The 2× advantage computed against a $300 Heavy seat
+does not survive at $100.
 
-**The decisive number is now the price cliff, not throughput.** $300/month is $3,600/year:
+**So the cost argument for self-hosting is spent.** Stated plainly, because this analysis
+walked it back progressively as better data arrived: WOMBO's price turned out to be market
+rate, RunPod matches it on faster silicon, the per-second APIs are cheap, and a $100 seat
+covers the volume. Cost is no longer a reason to build.
 
-| | For $3,600/year |
-|---|---|
-| RTX PRO 6000 (96 GB) at $0.65/hr | **~5,500 GPU-hours** |
-| At ~1 min/clip | **~330,000 clips/year** |
-| SuperGrok Heavy at its theoretical 500/day | 182,500 clips/year |
+**What remains is capability the subscription cannot provide at any price:**
 
-Own capacity delivers roughly **double the output for the same spend** — measured against the
-subscription's *theoretical* ceiling, before any throttling, and without the 720p/1080p
-uncertainty, with LoRA available and no content filter in path.
+| | Subscription | Own engine |
+|---|---|---|
+| LoRA on our own characters | no | **yes** |
+| Version frozen for a project's duration | no | **yes** |
+| No content filter in path | no | **yes** |
+| Footage never leaves our infrastructure | no | **yes** |
+| Zero operations | **yes** | no |
+| Reference-to-video with 7 reference images | **yes** | no |
+| 30-second single clip | **yes** (720p) | no (20 s ceiling) |
 
-**Plan for the promo window.** Run volume through the subscription while it is cheap; in
-parallel, stand up the container and take real measurements (WOMBO's free 48-hour evaluation
-plus RunPod for comparison costs nothing and closes the outstanding unknown — the ~2 min/clip
-estimate in § 2 is still unverified). By the time the rate goes to $300, the decision rests on
-two numbers that do not exist today: Heavy's actual sustained daily throughput, and this
-pipeline's real wall time per clip.
+For a film with recurring characters the first row decides it — LoRA is what reference images
+cannot substitute, and it is the only reason left to build the pipeline.
 
-**Verify on the account now:** that the tier is Heavy and $99 is promotional (with its end
-date); whether 1080p is actually included or the ceiling is 720p; and how many clips genuinely
-complete before throttling begins.
+**Revised recommendation: do not choose.** Keep the subscription for ideation, composition
+checks, client previews and reference-to-video. Build the engine when a project actually needs
+cross-film character continuity. Absent that requirement, the build can wait for the project
+that justifies it.
+
+**The 720p question, raised for the third time.** A further source describes SuperGrok as
+including "HD 720p video generation up to 30 seconds — the current resolution ceiling and
+duration maximum on the consumer tier", with 1080p appearing only in API contexts. Plus may
+differ. But **if the consumer ceiling really is 720p, the premise of the comparison collapses**
+— it would mean benchmarking a 1080p pipeline against a tool that does not produce 1080p.
+Verify by inspecting a downloaded file's actual resolution rather than the interface label.
+
+**Two numbers still worth measuring during the next month**, since neither exists today: the
+tier's sustained daily throughput before throttling, and this pipeline's real wall time per
+clip (WOMBO's free 48-hour evaluation plus RunPod for comparison costs nothing and closes the
+~2 min/clip estimate in § 2, still unverified).
 
 ## 5. Teaching video generation on rented capacity
 
