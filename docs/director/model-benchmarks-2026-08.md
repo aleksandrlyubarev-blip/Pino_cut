@@ -98,9 +98,41 @@ On L40 the practical choices are:
   yet well optimized on L40S; AWQ is currently faster there
 - **AWQ / GPTQ INT4** — the pragmatic default for this fleet
 - **GGUF (incl. Unsloth Dynamic UD-Q4_K_XL)** — excellent quality per byte, wrong engine
-  for a batched fleet. See § 4a, this deserves its own analysis.
+  for a batched fleet. See § 4a–4b, this deserves its own analysis.
 
-### 4a. Unsloth Dynamic quants and why Ada falls between the chairs
+### 4a. Quantization: three levels, and why we build our own
+
+"Quantization" conflates three separate decisions. Keeping them apart makes the choice obvious:
+
+1. **Format** — how the number sits in memory and what the silicon can execute: INT4, INT8,
+   FP8, NVFP4, MXFP4, GGUF k-quants. Dictated by the GPU, few options.
+2. **Algorithm** — how scales and rounding are chosen: RTN, GPTQ, AWQ, SmoothQuant, imatrix,
+   HQQ, QuIP#, AQLM, QAT. This is where the "dozens of methods" live.
+3. **Publisher** — who ran (2) into (1) for a given model and uploaded the file: Unsloth,
+   bartowski, RedHatAI, or the model vendor.
+
+Unsloth is level 3. Their contribution at level 2 is real — a per-layer bit-allocation policy
+validated by KL divergence — but it produces no new format: the output is llama.cpp k-quants
+(`UD-Q4_K_XL` is literally llama.cpp's `Q4_K`), so the whole contribution is confined to the
+llama.cpp ecosystem. That is the root cause of the format mismatch in § 4b.
+
+**The fleet's default should be to quantize in-house with `llm-compressor`**, the
+vLLM-project tool. It covers FP8, INT8, INT4, AWQ and GPTQ, explicitly supports NVIDIA
+compute capability > 8.9 (Ada Lovelace — our L40), and since 0.9.0 (Jan 2026) also does KV
+cache and attention quantization, which is the 4× cache reduction referenced in § 3.
+Ready-made checkpoints with published evals are available from RedHatAI on the Hub, and
+`Qwen/Qwen3.6-27B-FP8` comes from the vendor directly.
+
+The decisive argument for building our own is **calibration data**. Every public quant is
+calibrated on a generic corpus, and calibration data determines which weights the algorithm
+protects. PinoCut's traffic is narrow and unusual — shot lists, Grok prompt packs,
+`TimelineV1` JSON, script analysis. Calibrating on captured Director logs should beat any
+general-purpose quant on this workload, including Unsloth's. Buying a publisher's artifact
+makes sense for one-off experiments, where their debugging of model-specific breakage (MoE
+routers, vision encoders, shared-KV layers) saves a day of work; it does not make sense as
+the standing choice for a production fleet.
+
+### 4b. Unsloth Dynamic quants and why Ada falls between the chairs
 
 The degradation figures in the original candidate comparison (≈1.0% at 4-bit) come from
 Unsloth Dynamic 2.0, and that quality claim holds up. Their methodology is sound — KL
@@ -193,7 +225,7 @@ diffusion workers hold GPUs):
   llama.cpp**. Highest scores in the class (GPQA 87.8, SWE-bench Verified 77.2, MMLU-Pro
   86.2), hybrid linear attention keeps long-script KV tractable, Apache 2.0. This role runs
   at concurrency 1, so llama.cpp's batching weakness costs nothing and Unsloth Dynamic's
-  accuracy-per-byte advantage is free (§ 4a). This is the brain.
+  accuracy-per-byte advantage is free (§ 4b). This is the brain.
 - **Scene writers (N parallel replicas)** — **Gemma 4 26B A4B**, served as **AWQ on vLLM
   ≥ 0.21.0**. 4B active params and a 5.2 GiB KV ceiling give the highest concurrency per
   card of anything here; continuous batching plus prefix caching over the shared lore
@@ -223,7 +255,10 @@ diffusion workers hold GPUs):
    model generation; if the real gap on story reasoning is negligible, the Showrunner can
    move to vLLM too and the fleet becomes single-engine.
 6. Watch vLLM issue #39469 — if `UD-` prefix loading lands and GGUF throughput improves,
-   the mixed-engine split in § 4a collapses into one stack.
+   the mixed-engine split in § 4b collapses into one stack.
+7. Capture Director traffic (shot lists, prompt packs, TimelineV1 JSON) as a calibration
+   set and quantize the chosen model in-house with `llm-compressor`, then compare it against
+   the vendor FP8 and any public AWQ build on the same eval (§ 4a).
 
 ## 8. Sources
 
@@ -249,4 +284,7 @@ diffusion workers hold GPUs):
 - [vLLM issue #39469: non-standard GGUF quant prefixes (UD-)](https://github.com/vllm-project/vllm/issues/39469)
 - [vLLM vs llama.cpp benchmarks (2026)](https://markaicode.com/benchmarks/vllm-vs-llamacpp-performance/) · [Ollama vs vLLM throughput at concurrency](https://www.sitepoint.com/ollama-vs-vllm-performance-benchmark-2026/)
 - [GGUF vs AWQ vs GPTQ guide (2026)](https://fungies.io/llm-quantization-gguf-awq-gptq-guide-2026/) — GGUF-in-vLLM caveat
+- [llm-compressor](https://github.com/vllm-project/llm-compressor) · [docs](https://docs.vllm.ai/projects/llm-compressor/en/latest/) — the vLLM-native quantization path
+- [LLM Compressor 0.9.0: attention and KV cache quantization](https://developers.redhat.com/articles/2026/01/16/llm-compressor-090-attention-quantization-mxfp4-support-and-more)
+- [vLLM FP8 W8A8 docs](https://docs.vllm.ai/en/stable/features/quantization/llm_compressor/fp8/) — Ada Lovelace support (compute capability > 8.9)
 - [GMI Cloud: open-weight benchmarks, August 2026](https://www.gmicloud.ai/en/blog/ai-model-benchmarks-august-2026-open-weight-models-catch-the-frontier)
