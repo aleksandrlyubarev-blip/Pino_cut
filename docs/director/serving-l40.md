@@ -107,9 +107,34 @@ Do not trust the arithmetic in § 2 — vLLM reports the truth at startup.
    If it drifts on structured output, re-quantize with `llm-compressor` using captured
    Director logs as the calibration set (`model-benchmarks-2026-08.md` § 4a).
 
-## 6. What this frees
+## 6. Card separation, and what co-resides with what
 
-At ~31 GB resident the Director does **not** share its card with LTX-2.5 — that model needs
-~34–40 GB in FP8 on its own (`media-layer` sizing, see the LTX analysis). The two live on
-separate cards. The 17 GB of spare pool on the Director's card goes to concurrency, which is
-the thing that actually scales the fleet.
+The Director does **not** share its card with LTX-2.5, but the reason needs stating
+precisely, because the naive version (summing every LTX component) overstates the footprint.
+
+LTX runs its stages **sequentially**, so peak VRAM is the worst stage, not the total:
+
+| Stage | Resident | FP8 |
+|---|---|---|
+| 1 — base generation | DiT + text encoder | **~35 GB** |
+| 2 — upsampling | upsampler (~5 GB) + latents | ~8–10 GB |
+
+Peak is therefore ~35 GB, leaving ~13 GB on a 48 GB card — which a 31 GB Director cannot
+occupy. Separate cards.
+
+**Caveat: these figures are measured on LTX-2.3.** No VRAM numbers have been published for
+LTX-2.5 (released 2026-08-10). The architecture is close — same 22B DiT class, same Gemma
+text encoder family — so treat ~35 GB as an estimate, not a spec, and re-measure. Peak also
+scales with resolution × frame count; the high end genuinely reaches the ceiling (an FP8
+variant at 44 GB is documented as needing a 48 GB card or sequential offload). This is why
+LTX ships `--quantization fp8-cast --offload {cpu,disk}` and VAE tiling.
+
+**The useful consequence:** the Gemma text encoder can be offloaded — to CPU for the text
+pass, or to Lightricks' API encoding node which encodes in under a second and frees the GPU
+entirely for sampling. With the encoder offloaded, LTX's resident footprint in stage 1 drops
+to roughly 22–23 GB. That leaves room on the *media* card for a small model — a 7–9B router
+or JSON validator at FP8 (~8 GB), which is precisely the agent that repairs ComfyUI calls.
+Putting it on the same card as ComfyUI is the right placement anyway.
+
+The 17 GB of spare pool on the Director's card goes to concurrency, which is the thing that
+actually scales the fleet.
