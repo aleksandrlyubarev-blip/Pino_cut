@@ -215,6 +215,47 @@ takes per pass, final renders, and anything needing LoRA or continuity. The boun
 neither quality nor price but **quantity — under ~10 clips/day, subscription; above it, own
 capacity.**
 
+### 4e. If the seat is SuperGrok Heavy (a $100/month bill)
+
+**$100/month is the promotional rate.** SuperGrok Heavy lists at **$300/month**, with ~$99 for
+the first three months. Confirm the promo end date in billing — the bill triples on schedule.
+
+**At Heavy's quota the throughput argument in § 4d largely evaporates.** Reported allowance is
+**500 renders/day** against 50 on Premium and 100 on Premium+:
+
+| | 400 generations |
+|---|---|
+| Heavy at 500/day | **under one day** |
+| $30 tier at a real 10–15/day | 33 days |
+
+Caveat: xAI's stated quotas and observed throughput diverge — the $30 tier advertises 50/day
+against user reports of 10–15 before throttling. Whether Heavy has the same gap is
+undocumented. **The account holder can measure this directly**, and that observation beats any
+published estimate.
+
+**The decisive number is now the price cliff, not throughput.** $300/month is $3,600/year:
+
+| | For $3,600/year |
+|---|---|
+| RTX PRO 6000 (96 GB) at $0.65/hr | **~5,500 GPU-hours** |
+| At ~1 min/clip | **~330,000 clips/year** |
+| SuperGrok Heavy at its theoretical 500/day | 182,500 clips/year |
+
+Own capacity delivers roughly **double the output for the same spend** — measured against the
+subscription's *theoretical* ceiling, before any throttling, and without the 720p/1080p
+uncertainty, with LoRA available and no content filter in path.
+
+**Plan for the promo window.** Run volume through the subscription while it is cheap; in
+parallel, stand up the container and take real measurements (WOMBO's free 48-hour evaluation
+plus RunPod for comparison costs nothing and closes the outstanding unknown — the ~2 min/clip
+estimate in § 2 is still unverified). By the time the rate goes to $300, the decision rests on
+two numbers that do not exist today: Heavy's actual sustained daily throughput, and this
+pipeline's real wall time per clip.
+
+**Verify on the account now:** that the tier is Heavy and $99 is promotional (with its end
+date); whether 1080p is actually included or the ceiling is 720p; and how many clips genuinely
+complete before throttling begins.
+
 ## 5. Teaching video generation on rented capacity
 
 The economics are unusually favourable, because student workloads are bursty and small.
@@ -279,4 +320,5 @@ $0.80/hour is only the headline. What routinely breaks rental economics:
 - [MI300X cloud pricing](https://gpufinder.dev/gpu/mi300x) · [AMD MI300X/MI355X pricing 2026](https://www.spheron.network/blog/amd-mi300x-mi355x-pricing-2026/) · [Radeon PRO W7900 pricing](https://www.notebookcheck.net/AMD-Radeon-Pro-W7900-Dual-Slot-gets-500-price-cut-up-to-52-better-perf-per-dollar-compared-to-RTX-6000-Ada.843500.0.html)
 - [ComfyUI on AMD ROCm](https://rocm.blogs.amd.com/artificial-intelligence/comfyui/README.html) · [Text-to-video with ComfyUI on Radeon](https://rocm.docs.amd.com/projects/ai-developer-hub/en/latest/notebooks/inference/t2v_comfyui_radeon.html) · [AMD GPUs for AI inference in 2026](https://idfs.ai/blog/amd-gpus-for-ai-inference-2026)
 - [RTX 5090 LTX-2.3 benchmark report](https://huggingface.co/datasets/witcheer/rtx-5090-benchmarks/blob/main/reports/ltx-2.3.md)
+- [Grok pricing 2026: all tiers](https://aitoolanalysis.com/supergrok-subscription-price-2026/) · [Grok pricing: Free, SuperGrok, Heavy & API](https://www.ai-toolbox.co/grok-models/grok-pricing-plans-api-2026) · [Grok pricing plans and weekly limits](https://felloai.com/grok-pricing/)
 - [SuperGrok video/image generation pricing math](https://www.buildfastwithai.com/blogs/supergrok-video-image-generation-2026-speed-pricing-math-comparison) · [Grok Imagine daily limits by tier](https://www.arsturn.com/blog/grok-imagines-daily-generation-limits-what-you-need-to-know) · [New Grok Imagine limits spark user fury (Ctech)](https://www.calcalistech.com/ctechnews/article/rkbynj99bx) · [Is SuperGrok still worth $30/mo](https://aiveed.io/blog/supergrok-30-month-still-worth-it-2026)
