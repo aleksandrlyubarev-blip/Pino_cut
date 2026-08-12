@@ -1,7 +1,10 @@
 # Economics: rented L40 at $0.80/hour vs generation APIs
 
 Status: costing model, 2026-08-11
-Input assumption: L40-class cards available on demand at **$0.80/GPU-hour**.
+Input assumption: L40-class cards available on demand at **$0.80/GPU-hour**. Now anchored to
+a real quote — WOMBO Inference lists **L40 48 GB at $0.79/GPU-hr** (from $0.60 at ≥10K
+GPU-hr/mo) and a **24 GB L40G tier at $0.45/hr**. See `provider-wombo-evaluation.md` for the
+offer's constraints, which affect the fleet design more than the price does.
 Companions: `serving-l40.md` (LLM sizing), `media-layer-resolutions.md` (diffusion sizing).
 
 ---
