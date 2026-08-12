@@ -183,6 +183,39 @@ using, and a viral moment for Dream could squeeze us out mid-project. Mitigation
 multi-homing they themselves recommend (§ 7.1), and never placing deadline-bound work solely
 on residual capacity.
 
+**Current state of the team (checked 2026-08).**
+
+- **Headcount ~10.** The CEO described the funding as going partly toward growing a
+  "10-person workforce". Six of those are co-founders: Ben-Zion Benkhin, Angad Arneja,
+  Akshat Jagga, Paul Pavel, Vivek Bhakta, Parshant Loungani.
+- **Profitable**, per Benkhin: "the company is profitable, this new investment round took
+  place, and new and exciting things [are] on the horizon."
+- **One funding round, not two.** The $9M USD and $12.2M CAD figures are the same September
+  2024 Series A reported in different currencies.
+- **"Cockroach mode" since 2022** — the CEO's own term for the survival pivot after a
+  collapsed financing, alongside the app shutdown and a proposed privacy class-action they
+  subsequently dodged.
+
+**The group's centre of gravity is w.ai, not WOMBO.** Benkhin's own LinkedIn headline reads
+"janitor @ w.ai | creator @ WOMBO". **w.ai is a token project** — a "decentralized AI
+supercomputer" paying W COIN and "w points" to people who contribute idle compute from
+laptops, phones and consoles. This reframes the Series A: it was led by Round13's **Digital
+Asset Fund**, and contemporaneous coverage described it as raising to "build a decentralized
+supercomputer". They also partnered with io.net, a decentralized GPU network, in 2024.
+
+So the inference offering is not merely liquidation of a declining consumer app's spare
+capacity — it is plausibly a revenue and validation layer beneath a broader compute play.
+That is *more* strategic than incidental, but it means partner inference competes for
+attention with a token network inside a ten-person company. Note also that the partner
+document explicitly excludes "crypto/compute-network workloads" — they are keeping the
+enterprise offering clean of the category their sibling project occupies.
+
+**Practical consequence:** the recommendation is unchanged — multi-home from day one, no
+deadline-bound work on residual capacity — but now with better grounds. Add to § 9: who owns
+the partner business internally, and what the escalation path is. The highest-signal public
+check available is their job listings: whether they are hiring platform/infrastructure roles
+distinguishes a real bet on inference from an experiment on idle silicon.
+
 **In fairness, the positives are real.** 5B generations is genuine operational experience, not
 a slide. Their published SDXL figure is explicitly labelled as measured "under
 production-shaped load" rather than best-case — companies that massage numbers do not write
