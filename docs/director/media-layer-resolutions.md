@@ -65,6 +65,10 @@ Latent tokens = `F' × (H/32) × (W/32)`. This is the number the DiT actually at
 | 2048×1152 (16:9 1080p) | 16 × 36 × 64 | 36,864 | 2.6× |
 | 2560×1408 (2× of base) | 16 × 44 × 80 | 56,320 | 4.0× |
 | 2560×1440 (1440p 16:9) | 16 × 45 × 80 | 57,600 | 4.1× |
+| 3840×2176 (4K UHD, padded) | 16 × 68 × 120 | 130,560 | 9.3× |
+
+**4K alignment:** 3840/32 = 120 ✓ but **2160/32 = 67.5 ✗** — true UHD height is illegal, the
+same trap as 720p and 1080p. Use **3840×2176** (pad 16 px) or 3840×2144.
 
 The latent tensor itself is trivial — 128 ch × 14,080 × 2 B = **3.6 MB at 720p**. Memory goes
 to attention activations over the sequence, which with FlashAttention scale linearly, not
@@ -84,6 +88,41 @@ The output pixel tensor at 121 frames, bf16:
 
 Decoder intermediates run several times that, which is exactly what VAE tiling bounds
 ("peak memory is bounded by the tile size"). Enable tiling for anything above 1080p.
+
+### 4a. 4K and long duration on a 96 GB card
+
+Two separate ceilings, often conflated:
+
+**Duration is capped by the model, not the card.** LTX-2.5 tops out at **20 seconds** (480
+frames at 24 fps, context + duration ≤ 505). Thirty seconds is unavailable at any resolution
+on any GPU — it is two shots in the edit, not one generation.
+
+**4K at 20 seconds does not fit in one pass, even at 96 GB.** At 481 frames `F' = 61`, and a
+3840×2176 grid of 120 × 68 gives **497,760 latent tokens** — 15× the 1080p/5 s figure. The
+output tensor alone is `2176 × 3840 × 481 × 3 × 2 B ≈ 24.1 GB`, and with ~22 GB of FP8 weights
+that is 46 GB before a single activation, with attention over half a million tokens as the
+dominant term.
+
+| Task | RTX PRO 6000, 96 GB, FP8 |
+|---|---|
+| 4K, ~5 s | **comfortable** |
+| 4K, 20 s via two-stage + `extend` | **plausible — measure it** |
+| 4K, 20 s in one generation | **no** |
+| 30 s at any resolution | **no — model ceiling** |
+
+What makes long 4K tractable is the intended path rather than raw VRAM: the expensive 8-step
+sampling runs at low token count and the latent upsampler lifts to 4K with a single decode;
+`extend` carries context between segments so peak memory does not scale with runtime; VAE
+tiling bounds the decode; frames stream to disk instead of being held whole.
+
+For reference, published guidance puts native 4K at 48 GB **in FP16**, since the 22B model
+needs ~44 GB of weights at that precision. FP8 halves it, which is where the 96 GB headroom
+comes from.
+
+**Worth questioning whether 4K is needed at all.** It costs 9–15× the latent tokens of 1080p
+depending on duration, while 1440p is ample for web, festival and streaming delivery. 4K earns
+its cost in two cases: theatrical projection, and a client contract that specifies it. Absent
+either, target 1440p for delivery and keep 4K as a per-job option.
 
 There is also a decoder choice: the **diffusion decoder** gives better quality at the cost of
 longer decode and more VRAM; the **convolutional decoder** is lighter and needs no extra
