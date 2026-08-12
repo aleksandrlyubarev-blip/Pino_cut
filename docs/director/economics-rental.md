@@ -165,6 +165,56 @@ re-run. Not fine for a 20-second `extend` chain on an approved shot, where an ev
 the whole sequence. That is why the split above is drawn on interruption tolerance, not on
 VRAM alone.
 
+## 4d. Versus a Grok subscription (not the per-second API)
+
+A flat subscription is different economics from the per-second API costed in § 2, and it is
+the comparison that actually applies if a SuperGrok seat is already in hand.
+
+**What the subscription provides.** SuperGrok is $30/month, the minimum tier carrying video.
+Official quotas are 50 renders/day on Premium, 100 on Premium+, 500 on SuperGrok Heavy.
+Reported reality is **10–15 clips/day at 720p** before fair-use throttling, and quotas were
+recently cut by up to 80% — "roughly 10 generations per 8 hours instead of dozens per day".
+**xAI does not publish limits at all**; every figure here comes from user reports.
+
+Also worth verifying on the account itself: one source puts the $30 tier's ceiling at
+**720p** (30 s max), with 1080p appearing in API and 1.5-preview contexts. Confirm before
+assuming 1080p is included.
+
+**Per-clip cost is not where the difference lies:**
+
+| Route | Per 5 s clip | Ceiling |
+|---|---|---|
+| **Grok subscription** (at a full 12/day) | ~$0.083 | **10–15 per day** |
+| RTX 5090 spot, $0.40/hr | ~$0.007 | none |
+| RTX PRO 6000, $0.65/hr | ~$0.011 | none |
+| L40S, $0.79/hr | ~$0.026 | none |
+
+Self-hosting is 3–12× cheaper per clip, but both are pocket change in absolute terms.
+
+**The difference is throughput, and it is ~30×.** A short film is ~400 generations (§ 3):
+
+| | Time for 400 generations |
+|---|---|
+| **Grok subscription** (12/day) | **33 days** |
+| One rented card | **one overnight run** |
+| Six cards | **~2 hours** |
+
+**The compounding risk is that the quota is undisclosed and retroactively cut.** A production
+schedule cannot be planned against an undocumented limit the vendor reduced by 80% without
+notice. That is an inconvenience for a hobbyist and disqualifying for deadline work.
+
+**Net position.** Self-hosting loses on exactly two things: setup and operations time (days of
+real work — container, benchmarking, debugging without SSH, multi-homing), and ownership of
+failures. It gains ~30× throughput, predictability, LoRA-based character consistency, version
+stability, no content filters, IP containment, and 20-second clips.
+
+**Recommendation: keep the subscription and build the engine anyway.** $30/month is cheap for
+what Grok is genuinely good at — fast ideation, checking a composition, showing a client, and
+reference-to-video with up to seven reference images. Self-hosting handles volume: hundreds of
+takes per pass, final renders, and anything needing LoRA or continuity. The boundary is
+neither quality nor price but **quantity — under ~10 clips/day, subscription; above it, own
+capacity.**
+
 ## 5. Teaching video generation on rented capacity
 
 The economics are unusually favourable, because student workloads are bursty and small.
@@ -229,3 +279,4 @@ $0.80/hour is only the headline. What routinely breaks rental economics:
 - [MI300X cloud pricing](https://gpufinder.dev/gpu/mi300x) · [AMD MI300X/MI355X pricing 2026](https://www.spheron.network/blog/amd-mi300x-mi355x-pricing-2026/) · [Radeon PRO W7900 pricing](https://www.notebookcheck.net/AMD-Radeon-Pro-W7900-Dual-Slot-gets-500-price-cut-up-to-52-better-perf-per-dollar-compared-to-RTX-6000-Ada.843500.0.html)
 - [ComfyUI on AMD ROCm](https://rocm.blogs.amd.com/artificial-intelligence/comfyui/README.html) · [Text-to-video with ComfyUI on Radeon](https://rocm.docs.amd.com/projects/ai-developer-hub/en/latest/notebooks/inference/t2v_comfyui_radeon.html) · [AMD GPUs for AI inference in 2026](https://idfs.ai/blog/amd-gpus-for-ai-inference-2026)
 - [RTX 5090 LTX-2.3 benchmark report](https://huggingface.co/datasets/witcheer/rtx-5090-benchmarks/blob/main/reports/ltx-2.3.md)
+- [SuperGrok video/image generation pricing math](https://www.buildfastwithai.com/blogs/supergrok-video-image-generation-2026-speed-pricing-math-comparison) · [Grok Imagine daily limits by tier](https://www.arsturn.com/blog/grok-imagines-daily-generation-limits-what-you-need-to-know) · [New Grok Imagine limits spark user fury (Ctech)](https://www.calcalistech.com/ctechnews/article/rkbynj99bx) · [Is SuperGrok still worth $30/mo](https://aiveed.io/blog/supergrok-30-month-still-worth-it-2026)
