@@ -143,7 +143,53 @@ but it establishes that they publish honest, load-realistic figures rather than 
 4. **Prefix-cache persistence** (§ 2.3) and **cold-start weight loading** (§ 2.4) are both
    unanswered by the document and both materially affect cost.
 
-## 8. Questions to send back
+## 8. Counterparty assessment
+
+**Who they are.** Toronto-based consumer AI company founded by Ben-Zion Benkhin, who signs
+the partner document. Their 2021 lip-sync app reached 74M downloads in ten months — the
+fastest-growing consumer app in Canada. Dream, their text-to-image product, was Google's
+"App of the Year" in 2022; 200M+ downloads across their apps by 2024. Total funding is
+roughly **$15M**: a $6M seed in 2021 and $9M in September 2024 led by Round13 Digital Asset
+Fund, **with NVIDIA and CoreWeave participating**. The last of those explains how a company
+this size fields thousands of GPUs.
+
+**Why there is spare capacity.** Their own document tells the story if you read the tenses.
+Every headline metric is cumulative or past: "5B+ generations served", "50M+ installs", and
+critically *"historical peaks above 100K requests/hour"* — a peak that no longer occurs. A
+vendor quoting lifetime totals and historical peaks rather than current run-rate is usually
+telling you something.
+
+Four structural reasons, in descending order of how benign they are:
+
+1. **Fleets are sized for peaks.** Capacity provisioned for 100K req/hr sits idle most of the
+   day; diurnal troughs alone leave large gaps in a perfectly healthy business. Selling that
+   idle time is rational — it is the origin story of AWS.
+2. **They shut down their biggest product.** The lip-sync app, 74M downloads, was
+   discontinued in 2023 over copyright concerns. That is demand deliberately deleted.
+3. **Consumer AI-art demand passed its 2022–23 peak.** Casual users were absorbed by
+   Midjourney, image generation inside ChatGPT and Gemini, and phone-native tools.
+4. **Hardware-vendor investors.** With NVIDIA and CoreWeave on the cap table, GPU access is
+   favourable — and it is easy to end up provisioned beyond what the consumer product needs.
+
+**The arithmetic worth raising with them.** 3,600 cards against ~$15M raised: L40 48GB runs
+$7–9K each, so 3,600 units is ~$25M of hardware — more than the company has ever raised.
+The fleet is therefore almost certainly not owned outright but leased, financed, or accessed
+through CoreWeave. That is a chain of dependencies rather than a balance-sheet asset, and it
+is a fair question to ask directly.
+
+**What this means for us.** "We do not sell guaranteed reservations" reads differently in this
+light: our capacity is residual by construction — we get what the consumer products are not
+using, and a viral moment for Dream could squeeze us out mid-project. Mitigation is the
+multi-homing they themselves recommend (§ 7.1), and never placing deadline-bound work solely
+on residual capacity.
+
+**In fairness, the positives are real.** 5B generations is genuine operational experience, not
+a slide. Their published SDXL figure is explicitly labelled as measured "under
+production-shaped load" rather than best-case — companies that massage numbers do not write
+that. The pricing is genuinely competitive, motivated sellers usually are, and "direct line to
+the engineering team" is credible at this company size in a way it is not at a hyperscaler.
+
+## 9. Questions to send back
 
 1. Can an Option B deployment be pinned to a minimum of one always-on instance, so a vLLM
    server retains its KV/prefix cache between requests?
@@ -155,3 +201,5 @@ but it establishes that they publish honest, load-realistic figures rather than 
 5. Are Option B instances on-demand only, or is there preemption?
 6. Does acceptable-use screening permit dramatic/violent narrative content on dedicated
    capacity?
+7. Is the fleet owned, leased, or accessed through a partner cloud — and what happens to
+   partner capacity if consumer traffic spikes (§ 8)?
