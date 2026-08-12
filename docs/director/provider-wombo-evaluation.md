@@ -230,8 +230,35 @@ Rack count follows from the power budget per rack: ~180 racks at a conventional 
 A 2.5 MW hall with dozens of racks needs facilities engineers, network staff, hardware techs
 handling RMAs (at 3,600 GPUs, failures are weekly) and a 24/7 NOC — dozens of people on site
 alone. **WOMBO has about ten employees, six of them co-founders.** They neither built nor
-operate this. The most parsimonious reading is capacity contracted from CoreWeave — investor
-and GPU cloud both — sized for the consumer peak and resold when unused.
+operate this; the capacity is contracted from someone.
+
+**From whom is unknown — do not treat this as settled.** CoreWeave is the obvious guess
+because they participated in the September 2024 round, but *no public source links WOMBO's
+fleet to CoreWeave*. Equally plausible: io.net, with whom WOMBO partnered in April 2024;
+another neocloud; colocation with self-financed hardware; or several providers at once. This
+is a hypothesis to test with a direct question (§ 10), not a finding to negotiate against.
+
+**And the chain is longer than "it's CoreWeave" implies.** CoreWeave does not build or own
+datacentres — it primarily *leases colocation space* and installs its own GPU infrastructure,
+e.g. an eight-year lease for 16 MW inside Core Scientific's Austin facility, across 33+ sites
+in North America and Europe. The real stack is:
+
+```
+Building + power owner        ← Core Scientific, Chirisa, Flexential …
+      ↓ leases megawatts
+GPU cloud operator            ← CoreWeave and peer neoclouds
+      ↓ contracts capacity
+WOMBO                         ← ~10 people, reselling what goes unused
+      ↓ our container
+us
+```
+
+Four layers, each with its own contract and expiry. Note what sits at layer one: the physical
+base under AI clouds is frequently **former crypto miners** who already held cheap power
+contracts and built-out sites — Core Scientific among them — which imports that sector's
+volatility into the foundation. (CoreWeave's acquisition of Core Scientific was expected to
+close in late 2025; Core Scientific was still filing its own SEC reports and making its own
+acquisitions in 2026, so treat the outcome as unresolved.)
 
 *Two details consistent with that reading.* The document says "3,600 **shown in pool**", not
 "we own 3,600" — reseller phrasing for a view into someone else's inventory. And the identical
@@ -315,6 +342,9 @@ risk (§ 8).
 
 ### 9.2 When the capacity was likely contracted, and why it matters
 
+> The reconstruction below is inference from public dates and industry patterns, not
+> confirmed fact. WOMBO has not stated where its capacity comes from.
+
 Reconstruction: L40 shipped late 2022, L40S in August 2023. WOMBO's consumer peak was
 2022–23. They partnered with io.net (a decentralized GPU network) in April 2024, then raised
 in September 2024 **with NVIDIA and CoreWeave participating**.
@@ -385,8 +415,9 @@ The gateway in `serving-l40.md` § 4 already abstracts the endpoint.
 8. Which host platform are the L40 instances on, and is GPUDirect P2P disabled? (§ 2a — on
    Sapphire Rapids and later it risks silent data corruption.)
 9. Which datacentres and regions hosts the capacity?
-10. Is the hardware owned, leased, or contracted from a provider — and what is the term of
-    that commitment?
+10. **Who is the underlying compute provider, and what is the term of your commitment to
+    them?** This is the highest-value answer in the list — it reveals how many layers sit
+    beneath us and when the lowest one we are told about expires.
 11. Is 3,600 owned inventory or a pool ceiling? Why is the figure identical for both the
     48 GB and 24 GB tiers?
 
