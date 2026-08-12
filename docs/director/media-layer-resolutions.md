@@ -109,7 +109,39 @@ pipeline was built for (8 steps Stage 1 + 4 steps Stage 2).
 faster memory and NVFP4 paths that Ada lacks. Expect meaningfully slower and measure on the
 spare card — no L40 figures are published.
 
-## 7. Caveats
+## 7. Decision: ship on FP8 now, do not wait for 4-bit DiT quantization
+
+Recorded because it will be re-asked. Four reasons, strongest first:
+
+1. **We are not VRAM-bound.** Peak on this ladder is ~24–27 GB of 48 GB. Going 4-bit would
+   take the DiT from ~22 GB to ~11 GB — saving memory that is already idle. It optimizes a
+   resource we have in surplus.
+2. **Diffusion is compute-bound, so weight-only 4-bit buys no speed.** This inverts the LLM
+   intuition. LLM decode at batch 1 is memory-bandwidth-bound — every weight crosses the bus
+   per token, so halving weight bytes nearly halves latency. Diffusion sampling processes
+   thousands of latent tokens per step, weights are reused across all of them, and arithmetic
+   intensity is high. The literature is explicit that diffusion models remain compute-bound
+   even at small batch sizes, which is why serious 4-bit DiT work (DiRotQ, ConvRot,
+   SVDQuant) all quantizes activations too — W4A4 or W4A8 — and activations are where quality
+   is lost.
+3. **Low-bit paths often never touch the low-bit tensor cores.** Production INT8 for diffusion
+   transformers is documented to quantize, immediately dequantize back to bf16, and run a
+   bf16 matmul — the INT8 cores go unused and "INT8" lands slower than FP8. Real speedups
+   require fused custom kernels (DiRotQ ships Triton), not a checkpoint download.
+4. **Quality risk is asymmetric in video.** Aggressive 4-bit PTQ is reported to cause severe
+   degradation, and in video it surfaces as temporal instability — flicker, drift, texture
+   crawl between frames — which is precisely what makes generated footage read as cheap.
+
+Also note the published 4-bit DiT speedups (2.1–2.3×) are measured on FLUX.1-dev, an *image*
+model, with bespoke kernels. Transfer to a video DiT with a temporal axis is not automatic.
+Meanwhile LTX already ships `int8-convrot`, which is the ConvRot (ICLR 2026) rotation method
+— the mature end of this research line — and it targets Ampere/Turing cards that lack FP8.
+The L40 has FP8.
+
+**Revisit this if** the target moves to 4K, or two LTX instances must share one card, or the
+fleet moves to 24 GB cards. None applies today.
+
+## 8. Caveats
 
 1. Every VRAM and timing figure here is measured on **LTX-2.3**, mostly on RTX 5090. Nothing
    equivalent has been published for LTX-2.5 (released 2026-08-10). The VAE geometry and the
@@ -119,7 +151,7 @@ spare card — no L40 figures are published.
 3. `fp8-cast` on Ada may or may not hit hardware FP8 matmul — open question from
    `model-benchmarks-2026-08.md` § 4. Affects speed, not whether it fits.
 
-## 8. Sources
+## 9. Sources
 
 - [Lightricks/LTX-2 (GitHub)](https://github.com/Lightricks/LTX-2) — VAE shape, `fp8-cast`, `--offload`, decoder choice
 - [LTX-2: Efficient Joint Audio-Visual Foundation Model (arXiv 2601.03233)](https://arxiv.org/html/2601.03233v1)
@@ -129,3 +161,7 @@ spare card — no L40 figures are published.
 - [LTX 2.3 VRAM requirements tested](https://ltxworkflow.com/resources/community/ltx-23-vram-requirements-12gb-16gb-24gb)
 - [LTX 2.3 ComfyUI: two-stage pipeline and Gemma encoder offload](https://wavespeed.ai/blog/posts/ltx-2-3-comfyui-setup-two-stage-pipeline/)
 - [LTX 2.3 spatial and temporal upscaler](https://crepal.ai/blog/aivideo/ltx-2-3-spatial-temporal-upscaler/)
+- [DiRotQ: rotation-aware 4-bit diffusion transformers (arXiv 2605.16732)](https://arxiv.org/abs/2605.16732) — compute-bound argument, W4A4/W4A8, Triton kernels
+- [ConvRot: rotation-based 4-bit quantization for DiTs (ICLR 2026)](https://openreview.net/forum?id=SCC11m676G) — the method behind LTX's `int8-convrot`
+- [ViDiT-Q (arXiv 2406.02540)](https://arxiv.org/pdf/2406.02540) · [DVD-Quant (arXiv 2505.18663)](https://arxiv.org/pdf/2505.18663) — video DiT quantization quality
+- [Native INT8 compute for diffusion transformers (arXiv 2606.14598)](https://arxiv.org/html/2606.14598v1) — the dequantize-to-bf16 trap
