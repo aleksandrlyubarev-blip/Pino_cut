@@ -1,4 +1,4 @@
-# LTX-2.5 on L40 — resolution ladder: generate at 720p, upscale to 1080p/1440p
+# LTX-2.5 on L40 — resolution budget for 720p, 1080p and 1440p
 
 Status: sizing plan, 2026-08-11
 Companion to `serving-l40.md` (LLM side). Covers the diffusion worker's resolution budget.
@@ -78,7 +78,29 @@ longer decode and more VRAM; the **convolutional decoder** is lighter and needs 
 dependencies. On a 48 GB card the diffusion decoder is affordable at this ladder — reserve
 the convolutional one for 4K work.
 
-## 5. VRAM verdict on a 48 GB L40
+## 5. Direct generation vs. the ladder — pick by production stage, not by memory
+
+The ladder is not mandatory, and framing it as the default was wrong. LTX generates natively
+at high resolution: its own API offers no 720p tier at all — the rungs are 1080p → 1440p →
+4K — and LTX-2.3 is documented as generating 3840×2160 *natively rather than upscaling to
+it*. Sampling directly at 1080p is using the model as designed, not stretching it.
+
+LTX's own guidance is to generate at native resolution during iteration and **not** upscale,
+because upscaling mid-iteration costs time without changing the decisions being made;
+upscaling belongs at the end of the pipeline. So the split is by stage:
+
+| Stage | Resolution | Why |
+|---|---|---|
+| Take selection — composition, motion, continuity | **720p, no upscale** | fast feedback loop; the reviewer is judging framing and movement, not texture |
+| Final render of approved shots | **1080p or 1440p directly** | native sampling, no upsampling artifacts |
+
+The economics favour this sharply. A short runs ~400 generations to yield ~100 keepers.
+Rendering all 400 at 1440p pays full price for 300 rejected takes; 400 drafts at 720p plus
+100 native finals is roughly a 4× saving on the expensive half. It also maps onto the agent
+fleet: the continuity/QC agent reviews cheap 720p takes, and only approved shots reach the
+expensive render queue.
+
+## 6. VRAM verdict on a 48 GB L40
 
 Reference point: an RTX 5090 (32 GB) measured **peak 24.2 GB, flat across both 768×512 and
 1280×704** — no wall at 720p class, because the DiT sampling cost is not what dominates.
@@ -94,22 +116,25 @@ wall for this card is 4K, not 1440p. Offloading the Gemma text encoder after the
 (CPU, or Lightricks' API encoding node) is what buys the margin — it frees ~12 GB before
 sampling starts.
 
-## 6. Time, and why upscaling is cheap
+## 7. Time, and why upscaling is cheap
 
 On an RTX 5090, the distilled two-stage pipeline produces a 97-frame clip with synchronized
 audio in ~40 s at 768×512 and ~50 s at 1280×704. That is **2.29× the pixels for 1.25× the
 time** — strongly sublinear, because wall time is dominated by VAE decode and mp4/AAC
 encoding rather than by DiT sampling.
 
-This is the argument for the ladder: sampling at 720p and upsampling in latent space costs
-far less than sampling at 1440p directly, and the quality path is the one the distilled
-pipeline was built for (8 steps Stage 1 + 4 steps Stage 2).
+Note what this does *not* settle. Since decode cost is set by output resolution, direct 1080p
+and 720p→1080p pay the same decode; they differ only in how many latent tokens the 8-step
+Stage 1 sampling runs over (32,640 vs 14,080). The ladder therefore does less work in the
+expensive phase — but if decode genuinely dominates, the saving may be small. Benchmark both
+routes at equal output resolution before standardising on either (§ 5 covers which to use
+when).
 
 **Do not read the 5090 timings as L40 timings.** L40 is Ada, the 5090 is Blackwell with
 faster memory and NVFP4 paths that Ada lacks. Expect meaningfully slower and measure on the
 spare card — no L40 figures are published.
 
-## 7. Decision: ship on FP8 now, do not wait for 4-bit DiT quantization
+## 8. Decision: ship on FP8 now, do not wait for 4-bit DiT quantization
 
 Recorded because it will be re-asked. Four reasons, strongest first:
 
@@ -141,7 +166,7 @@ The L40 has FP8.
 **Revisit this if** the target moves to 4K, or two LTX instances must share one card, or the
 fleet moves to 24 GB cards. None applies today.
 
-## 8. Caveats
+## 9. Caveats
 
 1. Every VRAM and timing figure here is measured on **LTX-2.3**, mostly on RTX 5090. Nothing
    equivalent has been published for LTX-2.5 (released 2026-08-10). The VAE geometry and the
@@ -151,7 +176,7 @@ fleet moves to 24 GB cards. None applies today.
 3. `fp8-cast` on Ada may or may not hit hardware FP8 matmul — open question from
    `model-benchmarks-2026-08.md` § 4. Affects speed, not whether it fits.
 
-## 9. Sources
+## 10. Sources
 
 - [Lightricks/LTX-2 (GitHub)](https://github.com/Lightricks/LTX-2) — VAE shape, `fp8-cast`, `--offload`, decoder choice
 - [LTX-2: Efficient Joint Audio-Visual Foundation Model (arXiv 2601.03233)](https://arxiv.org/html/2601.03233v1)
